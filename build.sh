@@ -1,1 +1,1 @@
-clang main.c -o simulator
+clang main.c -o simulator.out

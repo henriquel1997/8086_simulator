@@ -1,0 +1,1 @@
+clang -g -gcodeview main.c -DDEBUG -o simulator.exe
