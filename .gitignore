@@ -1,4 +1,7 @@
+/output
+/binary_out
 *.exe
 *.out
 *.pdb
 *.ilk
+.DS_Store
