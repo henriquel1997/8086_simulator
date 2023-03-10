@@ -1,21 +1,34 @@
-nasm listing_0037_single_register_mov.asm
-nasm listing_0038_many_register_mov.asm
-nasm listing_0039_more_movs.asm
-nasm listing_0040_challenge_movs.asm
+@echo off
+if not exist binary_out mkdir binary_out
+cd listings
+
+for %%i in (*.asm) do (
+    nasm "%%~ni.asm" -o "../binary_out/%%~ni.out"
+)
+
+cd ..
 
 clang main.c -o simulator.exe
 
-simulator listing_0037_single_register_mov > 37.asm
-simulator listing_0038_many_register_mov > 38.asm
-simulator listing_0039_more_movs > 39.asm
-simulator listing_0040_challenge_movs > 40.asm
+if not exist output mkdir output
+cd binary_out
 
-nasm 37.asm
-nasm 38.asm
-nasm 39.asm
-nasm 40.asm
+for %%i in (*.out) do (
+    ..\simulator "%%~ni.out" > "../output/%%~ni.asm"
+)
 
-fc 37 listing_0037_single_register_mov
-fc 38 listing_0038_many_register_mov
-fc 39 listing_0039_more_movs
-fc 40 listing_0040_challenge_movs
+cd ..
+cd output
+
+for %%i in (*.asm) do (
+    nasm "%%~ni.asm" -o "../binary_out/generated_%%~ni"
+)
+
+cd ..
+cd binary_out
+
+for %%i in (*.out) do (
+    fc "%%~ni.out" "generated_%%~ni"
+)
+
+cd ..
