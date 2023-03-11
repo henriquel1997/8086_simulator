@@ -1,1 +1,1 @@
-clang -g -gcodeview main.c -DDEBUG -o simulator.exe
+clang -g -gcodeview main.c -D_CRT_SECURE_NO_WARNINGS -DDEBUG -o simulator.exe

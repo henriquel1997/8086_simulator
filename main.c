@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h> //strcpy
 
 struct String {
 	char* data;
@@ -71,31 +70,20 @@ const char* get_register_name_from_code(byte wide, byte register_code){
 
 const char* get_address_calculation_with_no_displacement(byte mode, byte r_m){
 	switch (r_m){
-		case 0b000: return "[bx + si]";
-		case 0b001: return "[bx + di]";
-		case 0b010: return "[bp + si]";
-		case 0b011: return "[bp + di]";
-		case 0b100: return "[si]";
-		case 0b101: return "[di]";
+		case 0b000: return "[bx + si]"; //byte
+		case 0b001: return "[bx + di]"; //byte
+		case 0b010: return "[bp + si]"; //byte
+		case 0b011: return "[bp + di]"; //byte
+		case 0b100: return "[si]"; //byte
+		case 0b101: return "[di]"; //byte
 		case 0b110: return 0; //Should never get here
-		case 0b111: return "[bx]";
+		case 0b111: return "[bx]"; //byte
 	}
 	return 0;
 }
 
-void get_address_calculation_with_displacement(char* buffer, byte mode, byte r_m, byte d_low, byte d_high){
-	short data = 0;
-	byte* data_pointer = (byte*) &data;
-	
-	if (d_high == 0){
-		char signed_data = (char)d_low;
-		data = signed_data;
-	} else {
-		data_pointer[0] = d_low;
-		data_pointer[1] = d_high;
-	}
-
-	if (data == 0){
+void get_address_calculation_with_displacement(char* buffer, byte mode, byte r_m, short disp){
+	if (disp == 0){
 		switch (r_m) {
 			case 0b000: sprintf(buffer, "[bx + si]"); break;
 			case 0b001: sprintf(buffer, "[bx + di]"); break;
@@ -108,52 +96,279 @@ void get_address_calculation_with_displacement(char* buffer, byte mode, byte r_m
 		}
 	} else {
 		switch (r_m) {
-			case 0b000: sprintf(buffer, "[bx + si + %d]", data); break;
-			case 0b001: sprintf(buffer, "[bx + di + %d]", data); break;
-			case 0b010: sprintf(buffer, "[bp + si + %d]", data); break;
-			case 0b011: sprintf(buffer, "[bp + di + %d]", data); break;
-			case 0b100: sprintf(buffer, "[si + %d]", data); break;
-			case 0b101: sprintf(buffer, "[di + %d]", data); break;
+			case 0b000: sprintf(buffer, "[bx + si + %d]", disp); break;
+			case 0b001: sprintf(buffer, "[bx + di + %d]", disp); break;
+			case 0b010: sprintf(buffer, "[bp + si + %d]", disp); break;
+			case 0b011: sprintf(buffer, "[bp + di + %d]", disp); break;
+			case 0b100: sprintf(buffer, "[si + %d]", disp); break;
+			case 0b101: sprintf(buffer, "[di + %d]", disp); break;
 			case 0b110:
 				if (mode == 0b00){
-					sprintf(buffer, "[%d]", data); 
+					sprintf(buffer, "[%d]", disp); 
 				} else {
-					sprintf(buffer, "[bp + %d]", data); 
+					sprintf(buffer, "[bp + %d]", disp); 
 				}
 				break;
 			case 0b111:
 				if (mode == 0b00){
-					sprintf(buffer, "[%d]", data); 
+					sprintf(buffer, "[%d]", disp); 
 				} else {
-					sprintf(buffer, "[bx + %d]", data); 
+					sprintf(buffer, "[bx + %d]", disp); 
 				}
 				break;
 		}
 	}
 }
 
-void print_mov_with_memory_address_displacement(byte direction, byte wide, byte mode, byte reg, byte r_m, byte disp_low, byte disp_high){
-	const char* reg_name = get_register_name_from_code(wide, reg);
+const char* mov_name = "mov";
+
+enum InstructionType {
+	INST_R_M_TO_R_M,
+	INST_IMD_TO_R_M,
+	INST_IMD_TO_REG,
+	INST_IMD_TO_ACC,
+	INST_MEM_TO_ACC_VV,
+	INST_CONDITIONAL_JUMP
+};
+
+struct Instruction {
+	enum InstructionType type;
+	const char* name;
+	char num_bytes;
+	byte direction;
+	byte sign;
+	byte wide;
+	byte mode;
+	byte reg;
+	byte r_m;
+	short disp;
+	unsigned short data;
+	unsigned short address;
+	char jump_increment;
+	long label_pos;
+};
+
+void print_inst_with_memory_address_displacement(struct Instruction instruction){
+	const char* reg_name = get_register_name_from_code(instruction.wide, instruction.reg);
 	char buffer [20];
-	get_address_calculation_with_displacement(buffer, mode, r_m, disp_low, disp_high);
-	if (direction){
-		printf("mov %s, %s\n", reg_name, buffer);
+	get_address_calculation_with_displacement(buffer, instruction.mode, instruction.r_m, instruction.disp);
+	if (instruction.direction){
+		printf("%s %s, %s\n", instruction.name, reg_name, buffer);
 	} else {
-		printf("mov %s, %s\n", buffer, reg_name);
+		printf("%s %s, %s\n", instruction.name, buffer, reg_name);
 	}
 }
 
-int decode(struct String code){
+int print_single_asm(struct Instruction instruction){
+	if (instruction.type == INST_R_M_TO_R_M) {
+		if (instruction.mode == 0b00) {
+			//Memory mode with no displacement*
+			if (instruction.r_m != 0b110) {
+				const char* reg_name = get_register_name_from_code(instruction.wide, instruction.reg);
+				const char* address_calc = get_address_calculation_with_no_displacement(instruction.mode, instruction.r_m);
+				if (instruction.direction) {
+					printf("%s %s, %s\n", instruction.name, reg_name, address_calc);
+				} else {
+					printf("%s %s, %s\n", instruction.name, address_calc, reg_name);
+				}
+			} else {
+				//*There actually is a 16-bit displacement if r_m is 0b110
+				print_inst_with_memory_address_displacement(instruction);
+			}
+		} else if (instruction.mode == 0b01 || instruction.mode == 0b10) {
+			//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
+			print_inst_with_memory_address_displacement(instruction);
+		} else if (instruction.mode == 0b11) {
+			//Register mode
+			if (instruction.direction) {
+				printf("%s %s, %s\n", instruction.name, get_register_name_from_code(instruction.wide, instruction.reg), get_register_name_from_code(instruction.wide, instruction.r_m));
+			} else {
+				printf("%s %s, %s\n", instruction.name, get_register_name_from_code(instruction.wide, instruction.r_m), get_register_name_from_code(instruction.wide, instruction.reg));
+			}
+		} else {
+			printf("Mode not implemented: ");
+			print_byte(instruction.mode);
+			return 0;
+		}
+	} else if (instruction.type == INST_IMD_TO_R_M) {
+		if (instruction.mode == 0b11) {
+			//Register mode
+			printf("%s %s, %d\n", instruction.name, get_register_name_from_code(instruction.wide, instruction.r_m), instruction.data);
+		} else {
+			//Memory mode
+			char buffer[20];
+			if (instruction.mode == 0b00 && instruction.r_m != 0b110) {
+				sprintf(buffer, "%s", get_address_calculation_with_no_displacement(instruction.mode, instruction.r_m));
+			} else {
+				get_address_calculation_with_displacement(buffer, instruction.mode, instruction.r_m, instruction.disp);
+			}
+
+			const char* prefix = "byte";
+			if (instruction.wide){
+				prefix = "word";
+			}
+
+			byte is_wide = instruction.name == mov_name ? instruction.wide : (!instruction.sign && instruction.wide);
+			if (is_wide) {
+				printf("%s %s %s, word %d\n", instruction.name, prefix, buffer, instruction.data);
+			} else {
+				printf("%s %s %s, byte %d\n", instruction.name, prefix, buffer, instruction.data);
+			}
+		}
+	} else if (instruction.type == INST_IMD_TO_REG) {
+		printf("%s %s, %d\n", instruction.name, get_register_name_from_code(instruction.wide, instruction.reg), instruction.data);
+	} else if (instruction.type == INST_MEM_TO_ACC_VV) {
+		const char* acc;
+		if (instruction.wide) {
+			acc = "ax";
+		} else {
+			acc = "al";
+		}
+
+		if (instruction.direction) {
+			printf("%s [%d], %s\n", instruction.name, instruction.address, acc);
+		} else {
+			printf("%s %s, [%d]\n", instruction.name, acc, instruction.address);
+		}
+	}else if(instruction.type == INST_IMD_TO_ACC){
+		const char* reg_name = "al";
+		if (instruction.wide){
+			reg_name = "ax";
+		}
+
+		printf("%s %s, %d\n", instruction.name, reg_name, instruction.data);
+	}else if (instruction.type == INST_CONDITIONAL_JUMP) {
+		if (instruction.label_pos >= 0){
+			printf("%s label%ld\n", instruction.name, instruction.label_pos);
+		} else {
+			printf("%s %d\n", instruction.name, instruction.jump_increment);
+		}
+	} else {
+		return 0;
+	}
+
+	return 1;
+}
+
+int print_asm(struct Instruction* instructions, long num_instructions){
+	char* label_array = calloc(num_instructions, sizeof(char));
+
+	long total_bytes = 0;
+	for (long i = 0; i < num_instructions; i++){
+		if(instructions[i].type == INST_CONDITIONAL_JUMP){
+			char inc = instructions[i].jump_increment;
+
+			long label_pos = -1;
+			if (inc > 0){
+				for (label_pos = i + 1; label_pos < num_instructions; label_pos++){
+					inc -= instructions[label_pos].num_bytes;
+					if (inc == 0){
+						label_pos++;
+						break;
+					} else if (inc < 0) return 0;
+				}
+			}else{
+				for (label_pos = i; label_pos > 0; label_pos--){
+					inc += instructions[label_pos].num_bytes;
+					if (inc == 0) break;
+					else if (inc > 0) return 0;
+				}
+			}
+
+			if (label_pos >= 0 && label_pos < num_instructions){
+				label_array[label_pos] = 1;
+				instructions[i].label_pos = label_pos;
+			} else {
+				return 0;
+			}
+		}
+		total_bytes += instructions[i].num_bytes;
+	}
+
 	printf("bits 16\n");
 
+	for (long i = 0; i < num_instructions; i++){
+		if (label_array[i]){
+			printf("label%ld:\n", i);
+		}
+		print_single_asm(instructions[i]);
+	}
+
+	return 1;
+}
+
+const char* get_instruction_name(byte b){
+	switch ((b & 0b00111000) >> 3){
+		case 0b000: return "add";
+		case 0b101: return "sub";
+		case 0b111: return "cmp";
+	}
+	return 0;
+}
+
+long decode(struct String code, struct Instruction* buffer){
+	long instruction_counter = 0;
+
+	long instruction_start = 0;
 	for(long i = 0; i < code.size; i++){
+		struct Instruction instruction = { 0 };
+
 		byte first_byte = code.data[i];
 		print_byte(first_byte);
 
+		instruction.name = mov_name;
 		if ((first_byte & 0b11111100) == 0b10001000) {
-			//MOV Instruction
-			byte direction = first_byte & 0b00000010;
-			byte wide 		= first_byte & 0b00000001;
+			instruction.type = INST_R_M_TO_R_M;
+		}else if ((first_byte & 0b11111110) == 0b11000110) {
+			instruction.type = INST_IMD_TO_R_M;
+		} else if ((first_byte & 0b11110000) == 0b10110000) {
+			instruction.type = INST_IMD_TO_REG;
+		} else if ((first_byte & 0b11111100) == 0b10100000){
+			instruction.type = INST_MEM_TO_ACC_VV;
+
+		} else if ((first_byte & 0b11000100) == 0b00000000){
+			instruction.type = INST_R_M_TO_R_M;
+			instruction.name = get_instruction_name(first_byte);
+		} else if ((first_byte & 0b11111100) == 0b10000000){
+			instruction.type = INST_IMD_TO_R_M;
+			instruction.name = get_instruction_name(code.data[i + 1]);
+		} else if ((first_byte & 0b11000110) == 0b00000100){
+			instruction.type = INST_IMD_TO_ACC;
+			instruction.name = get_instruction_name(first_byte);
+		}else{
+			switch (first_byte){
+				case 0b01110101: instruction.name = "jnz"; break;
+				case 0b01110100: instruction.name = "je"; break;
+				case 0b01111100: instruction.name = "jl"; break;
+				case 0b01111110: instruction.name = "jle"; break;
+				case 0b01110010: instruction.name = "jb"; break;
+				case 0b01110110: instruction.name = "jbe"; break;
+				case 0b01111010: instruction.name = "jp"; break;
+				case 0b01110000: instruction.name = "jo"; break;
+				case 0b01111000: instruction.name = "js"; break;
+				case 0b01111101: instruction.name = "jnl"; break;
+				case 0b01111111: instruction.name = "jg"; break;
+				case 0b01110011: instruction.name = "jnb"; break;
+				case 0b01110111: instruction.name = "ja"; break;
+				case 0b01111011: instruction.name = "jnp"; break;
+				case 0b01110001: instruction.name = "jno"; break;
+				case 0b01111001: instruction.name = "jns"; break;
+				case 0b11100010: instruction.name = "loop"; break;
+				case 0b11100001: instruction.name = "loopz"; break;
+				case 0b11100000: instruction.name = "loopnz"; break;
+				case 0b11100011: instruction.name = "jcxz"; break;
+				default:
+					printf("Instruction not implemented (1)\n");
+					return instruction_counter;
+			}
+			instruction.type = INST_CONDITIONAL_JUMP;
+			instruction.label_pos = -1;
+		}
+
+		if (instruction.type == INST_R_M_TO_R_M) {
+			//Register/Memory to Register/Memory
+			instruction.direction = first_byte & 0b00000010;
+			instruction.wide 		 = first_byte & 0b00000001;
 
 			if (i + 1 >= code.size) {
 				printf("Missing second byte of MOV\n");
@@ -164,157 +379,140 @@ int decode(struct String code){
 			print_byte(second_byte);
 
 
-			byte mode = second_byte >> 6;
-			byte reg = (second_byte >> 3) & 0b111;
-			byte r_m = (second_byte >> 0) & 0b111;
+			instruction.mode = second_byte >> 6;
+			instruction.reg = (second_byte >> 3) & 0b111;
+			instruction.r_m = (second_byte >> 0) & 0b111;
 
-			if (mode == 0b00) {
+			if (instruction.mode == 0b00 && instruction.r_m == 0b110) {
 				//Memory mode with no displacement*
-				if (r_m != 0b110){
-					const char* reg_name = get_register_name_from_code(wide, reg);
-					const char* address_calc = get_address_calculation_with_no_displacement(mode, r_m);
-					if (direction){
-						printf("mov %s, %s\n", reg_name, address_calc);
-					} else {
-						printf("mov %s, %s\n", address_calc, reg_name);
-					}
-				} else {
-					//*There actually is a 16-bit displacement if r_m is 0b110
-					byte disp_low = code.data[++i];
-					print_byte(disp_low);
-					byte disp_high = code.data[++i];
-					print_byte(disp_high);
+				//*There actually is a 16-bit displacement if r_m is 0b110
+				byte* disp_pointer = (byte*) &instruction.disp;
+				disp_pointer[0] = code.data[++i];
+				print_byte(disp_pointer[0]);
+				disp_pointer[1] = code.data[++i];
+				print_byte(disp_pointer[1]);
 					
-					print_mov_with_memory_address_displacement(direction, wide, mode, reg, r_m, disp_low, disp_high);
-				}
-			} else if (mode == 0b01 || mode == 0b10) {
+			} else if (instruction.mode == 0b01 || instruction.mode == 0b10) {
 				//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
-				byte disp_low = code.data[++i];
-				print_byte(disp_low);
+				byte d_low = code.data[++i];
+				print_byte(d_low);
 
-				byte disp_high = 0;
-				if (mode == 0b10) {
-					disp_high = code.data[++i];
-					print_byte(disp_high);
-				}
-
-				print_mov_with_memory_address_displacement(direction, wide, mode, reg, r_m, disp_low, disp_high);
-			} else if (mode == 0b11) {
-				//Register mode
-				if (direction) {
-					printf("mov %s, %s\n", get_register_name_from_code(wide, reg), get_register_name_from_code(wide, r_m));
+				if (instruction.mode == 0b10) {
+					byte* disp_pointer = (byte*) &instruction.disp;
+					disp_pointer[0] = d_low;
+					disp_pointer[1] = code.data[++i];
+					print_byte(disp_pointer[1]);
 				} else {
-					printf("mov %s, %s\n", get_register_name_from_code(wide, r_m), get_register_name_from_code(wide, reg));
+					instruction.disp = (char)d_low;
 				}
-			} else {
-				printf("Mode not implemented: ");
-				print_byte(mode);
-				return -1;
 			}
-		}else if ((first_byte & 0b11111110) == 0b11000110) {
-			//Immediate to Register or Memory MOV
-			byte wide = first_byte & 0b00000001;
+		}else if (instruction.type == INST_IMD_TO_R_M) {
+			//Immediate to Register or Memory
+			instruction.sign = (first_byte & 0b00000010) >> 1;
+			instruction.wide = first_byte & 0b00000001;
+			byte is_wide = instruction.name == mov_name ? instruction.wide : (!instruction.sign && instruction.wide);
 
 			byte second_byte = code.data[++i];
 			print_byte(second_byte);
 
-			byte mode = second_byte >> 6;
-			byte r_m = (second_byte >> 0) & 0b111;
+			instruction.mode = second_byte >> 6;
+			instruction.r_m = (second_byte >> 0) & 0b111;
 
-			unsigned short data = 0;
-			byte* data_pointer = (byte*) &data;
+			byte* data_pointer = (byte*) &instruction.data;
 
-			char buffer[20];
-			if (mode == 0b00 && r_m != 0b110){
-				byte data_low = code.data[++i];
-				print_byte(data_low);
-				data_pointer[0] = data_low;
+			if (instruction.mode == 0b11){
+				//Register mode
+				data_pointer[0] = code.data[++i];
+				print_byte(data_pointer[0]);
 
-				if (wide){
-					byte data_high = code.data[++i];
-					print_byte(data_high);
-					data_pointer[1] = data_high;
+				if (is_wide){
+					data_pointer[1] = code.data[++i];
+					print_byte(data_pointer[1]);
 				}
-
-				strcpy(buffer, get_address_calculation_with_no_displacement(mode, r_m));
 			} else {
-				byte disp_low = code.data[++i];
-				print_byte(disp_low);
-				byte disp_high = code.data[++i];
-				print_byte(disp_high);
+				//Memory mode
+				if (instruction.mode == 0b00 && instruction.r_m != 0b110) {
+					data_pointer[0] = code.data[++i];
+					print_byte(data_pointer[0]);
 
-				byte data_low = code.data[++i];
-				print_byte(data_low);
-				data_pointer[0] = data_low;
+					if (is_wide) {
+						data_pointer[1] = code.data[++i];
+						print_byte(data_pointer[1]);
+					}
+				} else {
+					byte* disp_pointer = (byte*) &instruction.disp;
 
-				if (wide){
-					byte data_high = code.data[++i];
-					print_byte(data_high);
-					data_pointer[1] = data_high;
+					disp_pointer[0] = code.data[++i];
+					print_byte(disp_pointer[0]);
+					disp_pointer[1] = code.data[++i];
+					print_byte(disp_pointer[1]);
+
+					data_pointer[0] = code.data[++i];
+					print_byte(data_pointer[0]);
+
+					if (is_wide) {
+						data_pointer[1] = code.data[++i];
+						print_byte(data_pointer[1]);
+					}
 				}
-
-				get_address_calculation_with_displacement(buffer, mode, r_m, disp_low, disp_high);
 			}
 
-			if (wide){
-				printf("mov %s, word %d\n", buffer, data);
-			} else {
-				printf("mov %s, byte %d\n", buffer, data);
+		}else if (instruction.type == INST_IMD_TO_REG) {
+			//Immediate to Register
+			instruction.wide = first_byte & 0b00001000;
+			instruction.reg = first_byte & 0b00000111;
+
+			byte* data_pointer = (byte*) &instruction.data;
+
+			data_pointer[0] = code.data[++i];
+			print_byte(data_pointer[0]);
+
+			if (instruction.wide){
+				data_pointer[1] = code.data[++i];
+				print_byte(data_pointer[1]);
 			}
-
-		}else if ((first_byte & 0b11110000) == 0b10110000) {
-			//Immediate to Register MOV
-			byte wide = first_byte & 0b00001000;
-			byte reg = first_byte & 0b00000111;
-
-			byte data_low = code.data[++i];
-			print_byte(data_low);
-
-			unsigned short data = 0;
-			byte* data_pointer =  (byte*) &data;
-			data_pointer[0] = data_low;
-
-			if (wide){
-				byte data_high = code.data[++i];
-				print_byte(data_high);
-				data_pointer[1] = data_high;
-			}
-
-			printf("mov %s, %d\n", get_register_name_from_code(wide, reg), data);
-		}else if ((first_byte & 0b11111100) == 0b10100000) {
+		}else if (instruction.type == INST_MEM_TO_ACC_VV) {
 			//Memory to Accumulator or Accumulator to Memory
-			byte direction = first_byte & 0b00000010;
-			byte wide 		= first_byte & 0b00000001;
+			instruction.direction = first_byte & 0b00000010;
+			instruction.wide 		= first_byte & 0b00000001;
 
-			unsigned short address = 0;
-			byte* data_pointer =  (byte*) &address;
+			byte* address_pointer = (byte*) &instruction.address;
 
-			byte address_low = code.data[++i];
-			print_byte(address_low);
-			data_pointer[0] = address_low;
+			address_pointer[0] = code.data[++i];
+			print_byte(address_pointer[0]);
 
-			byte address_high = code.data[++i];
-			print_byte(address_high);
-			data_pointer[1] = address_high;
+			address_pointer[1] = code.data[++i];
+			print_byte(address_pointer[1]);
+		}else if (instruction.type == INST_IMD_TO_ACC) {
+			instruction.wide = first_byte & 0b00000001;
 
-			const char* acc;
-			if (wide){
-				acc = "ax";
-			} else {
-				acc = "al";
+			byte* data_pointer = (byte*) &instruction.data;
+
+			data_pointer[0] = code.data[++i];
+			print_byte(data_pointer[0]);
+
+			if (instruction.wide){
+				data_pointer[1] = code.data[++i];
+				print_byte(data_pointer[1]);
 			}
-
-			if (direction){
-				printf("mov [%d], %s\n", address, acc);
-			} else {
-				printf("mov %s, [%d]\n", acc, address);
-			}
+		}else if (instruction.type == INST_CONDITIONAL_JUMP) {
+			instruction.jump_increment = code.data[++i];
+			print_byte(instruction.jump_increment);
 		}else{
-			printf("Instruction not implemented\n");
-			return 0;
+			printf("Instruction not implemented (2)\n");
+			return instruction_counter;
 		}
+
+		instruction.num_bytes = i - instruction_start;
+		instruction_start = i;
+
+		buffer[instruction_counter++] = instruction;
+#if DEBUG
+		print_single_asm(instruction);
+#endif
 	}
-	return 1;
+
+	return instruction_counter;
 }
 
 int main(int argc, char **argv){
@@ -333,6 +531,9 @@ int main(int argc, char **argv){
 	printf("Num Code Bytes: %ld\n", code.size);
 #endif
 
-	decode(code);
+	struct Instruction* instructions = malloc(sizeof(struct Instruction) * code.size);
+	long num_instructions = decode(code, instructions);
+
+	print_asm(instructions, num_instructions);
 	return 0;
 }
