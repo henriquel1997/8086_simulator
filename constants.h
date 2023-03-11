@@ -1,0 +1,13 @@
+const char* mov_name = "mov";
+const char* push_name = "push";
+const char* pop_name = "pop";
+const char* xchg_name = "xchg";
+const char* in_name = "in";
+const char* out_name = "out";
+const char* inc_name = "inc";
+const char* dec_name = "dec";
+const char* test_name = "test";
+const char* rep_name = "rep";
+const char* call_name = "call";
+const char* jmp_name = "jmp";
+const char* ret_name = "ret";

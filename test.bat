@@ -8,7 +8,7 @@ for %%i in (*.asm) do (
 
 cd ..
 
-clang main.c -o simulator.exe
+clang main.c -D_CRT_SECURE_NO_WARNINGS -o simulator.exe
 
 if not exist output mkdir output
 cd binary_out
