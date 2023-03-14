@@ -1,1 +1,1 @@
-clang main.c -o simulator.out
+clang main.c -DDEBUG -o simulator.out

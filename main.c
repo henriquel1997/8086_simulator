@@ -3,6 +3,49 @@
 
 #include "constants.h"
 
+#define byte unsigned char
+
+enum InstructionType {
+	INST_R_M_TO_R_M,
+	INST_IMD_TO_R_M,
+	INST_IMD_TO_REG,
+	INST_IMD_TO_ACC,
+	INST_MEM_TO_ACC_VV,
+	INST_CONDITIONAL_JUMP,
+	INST_REGISTER,
+	INST_SEGMENT_REGISTER,
+	INST_FIXED_PORT,
+	INST_VARIABLE_PORT,
+	INST_STRING_MANIPULATION,
+	INST_RET_DATA,
+	INST_INT,
+	INST_SEGMENT,
+	INST_NO_PARAMS
+};
+
+struct Instruction {
+	enum InstructionType type;
+	const char* name;
+	char num_bytes;
+	union {
+		byte direction;
+		byte sign;
+		byte shift_rotate;
+	};
+	union {
+		byte wide;
+		byte loop_while_zero;
+	};
+	byte mode;
+	byte reg;
+	byte r_m;
+	short disp;
+	unsigned short data;
+	unsigned short address;
+	char jump_increment;
+	int right_side_only;
+};
+
 struct String {
 	char* data;
 	long size;
@@ -26,8 +69,6 @@ struct String read_file(char* filename){
 	return string;
 }
 
-
-#define byte unsigned char
 void print_byte(byte b){
 #ifdef DEBUG
 	byte mask = 0b10000000;
@@ -132,48 +173,6 @@ void get_address_calculation_with_displacement(char* buffer, byte mode, byte r_m
 		}
 	}
 }
-
-enum InstructionType {
-	INST_R_M_TO_R_M,
-	INST_IMD_TO_R_M,
-	INST_IMD_TO_REG,
-	INST_IMD_TO_ACC,
-	INST_MEM_TO_ACC_VV,
-	INST_CONDITIONAL_JUMP,
-	INST_REGISTER,
-	INST_SEGMENT_REGISTER,
-	INST_FIXED_PORT,
-	INST_VARIABLE_PORT,
-	INST_STRING_MANIPULATION,
-	INST_RET_DATA,
-	INST_INT,
-	INST_SEGMENT,
-	INST_NO_PARAMS
-};
-
-struct Instruction {
-	enum InstructionType type;
-	const char* name;
-	char num_bytes;
-	union {
-		byte direction;
-		byte sign;
-		byte shift_rotate;
-	};
-	union {
-		byte wide;
-		byte loop_while_zero;
-	};
-	byte mode;
-	byte reg;
-	byte r_m;
-	short disp;
-	unsigned short data;
-	unsigned short address;
-	char jump_increment;
-	long label_pos;
-	int right_side_only;
-};
 
 const char* get_suffix(struct Instruction instruction){
 	if (instruction.right_side_only == 2){
@@ -301,10 +300,11 @@ int print_single_asm(struct Instruction instruction){
 
 		printf("%s %s, %d\n", instruction.name, reg_name, instruction.data);
 	}else if (instruction.type == INST_CONDITIONAL_JUMP) {
-		if (instruction.label_pos >= 0){
-			printf("%s label%ld\n", instruction.name, instruction.label_pos);
+		long offset = instruction.jump_increment + instruction.num_bytes;
+		if (offset >= 0){
+			printf("%s $+%ld\n", instruction.name, offset);
 		} else {
-			printf("%s %d\n", instruction.name, instruction.jump_increment);
+			printf("%s $%ld\n", instruction.name, offset);
 		}
 	}else if (instruction.type == INST_REGISTER) {
 		const char* prefix = "";
@@ -368,46 +368,9 @@ int print_single_asm(struct Instruction instruction){
 }
 
 int print_asm(struct Instruction* instructions, long num_instructions){
-	char* label_array = calloc(num_instructions, sizeof(char));
-
-	long total_bytes = 0;
-	for (long i = 0; i < num_instructions; i++){
-		if(instructions[i].type == INST_CONDITIONAL_JUMP){
-			char inc = instructions[i].jump_increment;
-
-			long label_pos = -1;
-			if (inc > 0){
-				for (label_pos = i + 1; label_pos < num_instructions; label_pos++){
-					inc -= instructions[label_pos].num_bytes;
-					if (inc == 0){
-						label_pos++;
-						break;
-					} else if (inc < 0) return 0;
-				}
-			}else{
-				for (label_pos = i; label_pos > 0; label_pos--){
-					inc += instructions[label_pos].num_bytes;
-					if (inc == 0) break;
-					else if (inc > 0) return 0;
-				}
-			}
-
-			if (label_pos >= 0 && label_pos < num_instructions){
-				label_array[label_pos] = 1;
-				instructions[i].label_pos = label_pos;
-			} else {
-				return 0;
-			}
-		}
-		total_bytes += instructions[i].num_bytes;
-	}
-
 	printf("bits 16\n");
 
 	for (long i = 0; i < num_instructions; i++){
-		if (label_array[i]){
-			printf("label%ld:\n", i);
-		}
 		if (!print_single_asm(instructions[i])){
 			printf("Error printing instruction\n");
 			return 0;
@@ -647,7 +610,6 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 		}
 		if (instruction->name){
 			instruction->type = INST_CONDITIONAL_JUMP;
-			instruction->label_pos = -1;
 			return 1;
 		}
 
