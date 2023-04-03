@@ -56,16 +56,22 @@ int main(int argc, char **argv){
 	state.num_instructions = decode(code, state.instructions);
 
 	if (should_execute){
+		struct State prev_state = state;
+
 		printf("\n");
 		while (execute_instruction(&state)){
 			print_single_asm(state.instructions[state.current_instruction - 1]);
 			printf("Registers:\n");
-			print_registers(&state);
+			print_registers(&state, &prev_state);
+			printf("\nFlags:\n");
+			print_flags(&state, &prev_state);
 			printf("\n");
+			
+			prev_state = state;
 		}
 
 		printf("\nFinal registers:\n");
-		print_registers(&state);
+		print_registers(&state, &prev_state);
 	} else {
 #ifndef DEBUG
 		print_asm(state.instructions, state.num_instructions);

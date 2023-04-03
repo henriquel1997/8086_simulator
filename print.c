@@ -114,18 +114,18 @@ void print_inst_with_memory_address_displacement(struct Instruction instruction)
 	get_address_calculation_with_displacement(buffer, instruction.mode, instruction.r_m, instruction.disp);
 	if (instruction.right_side_only) {
 		if (instruction.wide){
-			printf("%s word %s%s\n", instruction.name, buffer, get_suffix(instruction));
+			printf("%s word %s%s\n", get_inst_name(instruction), buffer, get_suffix(instruction));
 		} else {
-			printf("%s byte %s%s\n", instruction.name, buffer, get_suffix(instruction));
+			printf("%s byte %s%s\n", get_inst_name(instruction), buffer, get_suffix(instruction));
 		}
 		return;
 	}
 
 	const char* reg_name = get_register_name_from_code(instruction.wide, instruction.reg);
 	if (instruction.direction){
-		printf("%s %s, %s\n", instruction.name, reg_name, buffer);
+		printf("%s %s, %s\n", get_inst_name(instruction), reg_name, buffer);
 	} else {
-		printf("%s %s, %s\n", instruction.name, buffer, reg_name);
+		printf("%s %s, %s\n", get_inst_name(instruction), buffer, reg_name);
 	}
 }
 
@@ -139,9 +139,9 @@ int print_single_asm(struct Instruction instruction){
 				get_address_calculation_with_no_displacement(address_calc, instruction.mode, instruction.r_m);
 				if (instruction.right_side_only) {
 					if (instruction.wide){
-						printf("%s word %s%s\n", instruction.name, address_calc, get_suffix(instruction));
+						printf("%s word %s%s\n", get_inst_name(instruction), address_calc, get_suffix(instruction));
 					} else {
-						printf("%s byte %s%s\n", instruction.name, address_calc, get_suffix(instruction));
+						printf("%s byte %s%s\n", get_inst_name(instruction), address_calc, get_suffix(instruction));
 					}
 					return 1;
 				}
@@ -149,9 +149,9 @@ int print_single_asm(struct Instruction instruction){
 				const char* reg_name = get_register_name_from_code(instruction.wide, instruction.reg);
 				
 				if (instruction.direction) {
-					printf("%s %s, %s\n", instruction.name, reg_name, address_calc);
+					printf("%s %s, %s\n", get_inst_name(instruction), reg_name, address_calc);
 				} else {
-					printf("%s %s, %s\n", instruction.name, address_calc, reg_name);
+					printf("%s %s, %s\n", get_inst_name(instruction), address_calc, reg_name);
 				}
 			} else {
 				//*There actually is a 16-bit displacement if r_m is 0b110
@@ -164,15 +164,15 @@ int print_single_asm(struct Instruction instruction){
 			//Register mode
 			const char* r_m_name = get_register_name_from_code(instruction.wide, instruction.r_m);
 			if (instruction.right_side_only){
-				printf("%s %s%s\n", instruction.name, r_m_name, get_suffix(instruction));
+				printf("%s %s%s\n", get_inst_name(instruction), r_m_name, get_suffix(instruction));
 				return 1;
 			}
 			
 			const char* reg_name = get_register_name_from_code(instruction.wide, instruction.reg);
 			if (instruction.direction) {
-				printf("%s %s, %s\n", instruction.name, reg_name, r_m_name);
+				printf("%s %s, %s\n", get_inst_name(instruction), reg_name, r_m_name);
 			} else {
-				printf("%s %s, %s\n", instruction.name, r_m_name, reg_name);
+				printf("%s %s, %s\n", get_inst_name(instruction), r_m_name, reg_name);
 			}
 		} else {
 			return 0;
@@ -180,7 +180,14 @@ int print_single_asm(struct Instruction instruction){
 	} else if (instruction.type == INST_IMD_TO_R_M) {
 		if (instruction.mode == 0b11) {
 			//Register mode
-			printf("%s %s, %d\n", instruction.name, get_register_name_from_code(instruction.wide, instruction.r_m), instruction.data);
+			printf("%s %s, ", get_inst_name(instruction), get_register_name_from_code(instruction.wide, instruction.r_m));
+
+			if (is_inst_wide(instruction)){
+				printf("%d\n", instruction.data);
+			} else {
+				signed char* signed_data = (signed char*)&instruction.data;
+				printf("%d\n", *signed_data);
+			}
 		} else {
 			//Memory mode
 			char buffer[20];
@@ -195,15 +202,15 @@ int print_single_asm(struct Instruction instruction){
 				prefix = "word";
 			}
 
-			byte is_wide = instruction.name == mov_name ? instruction.wide : (!instruction.sign && instruction.wide);
+			byte is_wide = instruction.name == INST_NAME_MOV ? instruction.wide : (!instruction.sign && instruction.wide);
 			if (is_wide) {
-				printf("%s %s %s, word %d\n", instruction.name, prefix, buffer, instruction.data);
+				printf("%s %s %s, word %d\n", get_inst_name(instruction), prefix, buffer, instruction.data);
 			} else {
-				printf("%s %s %s, byte %d\n", instruction.name, prefix, buffer, instruction.data);
+				printf("%s %s %s, byte %d\n", get_inst_name(instruction), prefix, buffer, instruction.data);
 			}
 		}
 	} else if (instruction.type == INST_IMD_TO_REG) {
-		printf("%s %s, %d\n", instruction.name, get_register_name_from_code(instruction.wide, instruction.reg), instruction.data);
+		printf("%s %s, %d\n", get_inst_name(instruction), get_register_name_from_code(instruction.wide, instruction.reg), instruction.data);
 	} else if (instruction.type == INST_MEM_TO_ACC_VV) {
 		const char* acc;
 		if (instruction.wide) {
@@ -213,9 +220,9 @@ int print_single_asm(struct Instruction instruction){
 		}
 
 		if (instruction.direction) {
-			printf("%s [%d], %s\n", instruction.name, instruction.address, acc);
+			printf("%s [%d], %s\n", get_inst_name(instruction), instruction.address, acc);
 		} else {
-			printf("%s %s, [%d]\n", instruction.name, acc, instruction.address);
+			printf("%s %s, [%d]\n", get_inst_name(instruction), acc, instruction.address);
 		}
 	}else if(instruction.type == INST_IMD_TO_ACC){
 		const char* reg_name = "al";
@@ -223,53 +230,53 @@ int print_single_asm(struct Instruction instruction){
 			reg_name = "ax";
 		}
 
-		printf("%s %s, %d\n", instruction.name, reg_name, instruction.data);
+		printf("%s %s, %d\n", get_inst_name(instruction), reg_name, instruction.data);
 	}else if (instruction.type == INST_CONDITIONAL_JUMP) {
 		long offset = instruction.jump_increment + instruction.num_bytes;
 		if (offset >= 0){
-			printf("%s $+%ld\n", instruction.name, offset);
+			printf("%s $+%ld\n", get_inst_name(instruction), offset);
 		} else {
-			printf("%s $%ld\n", instruction.name, offset);
+			printf("%s $%ld\n", get_inst_name(instruction), offset);
 		}
 	}else if (instruction.type == INST_REGISTER) {
 		const char* prefix = "";
-		if (instruction.name == xchg_name){
+		if (instruction.name == INST_NAME_XCHG){
 			prefix = "ax, ";
 		}
-		printf("%s %s%s\n", instruction.name, prefix, get_register_name_from_code(1, instruction.reg));
+		printf("%s %s%s\n", get_inst_name(instruction), prefix, get_register_name_from_code(1, instruction.reg));
 	}else if (instruction.type == INST_SEGMENT_REGISTER) {
 		const char* seg_reg = get_segment_register_from_code(instruction.reg);
-		printf("%s %s\n", instruction.name, seg_reg);
+		printf("%s %s\n", get_inst_name(instruction), seg_reg);
 	}else if (instruction.type == INST_FIXED_PORT) {
 		const char* temp;
 		if (instruction.wide){
-			temp = instruction.name == in_name ? "%s ax, %d\n" : "%s %d, ax\n";
+			temp = instruction.name == INST_NAME_IN ? "%s ax, %d\n" : "%s %d, ax\n";
 		} else {
-			temp = instruction.name == in_name ? "%s al, %d\n" : "%s %d, al\n";
+			temp = instruction.name == INST_NAME_IN ? "%s al, %d\n" : "%s %d, al\n";
 		}
-		printf(temp, instruction.name, instruction.data);
+		printf(temp, get_inst_name(instruction), instruction.data);
 	}else if (instruction.type == INST_VARIABLE_PORT) {
 		if (instruction.wide){
-			if (instruction.name == in_name){
-				printf("%s ax, dx\n", instruction.name);
+			if (instruction.name == INST_NAME_IN){
+				printf("%s ax, dx\n", get_inst_name(instruction));
 			} else {
-				printf("%s dx, ax\n", instruction.name);
+				printf("%s dx, ax\n", get_inst_name(instruction));
 			}
 		} else {
-			if (instruction.name == in_name){
-				printf("%s al, dx\n", instruction.name);
+			if (instruction.name == INST_NAME_IN){
+				printf("%s al, dx\n", get_inst_name(instruction));
 			} else {
-				printf("%s dx, al\n", instruction.name);
+				printf("%s dx, al\n", get_inst_name(instruction));
 			}
 		}
 	}else if (instruction.type == INST_STRING_MANIPULATION) {
-		if (instruction.name == rep_name){
+		if (instruction.name == INST_NAME_REP){
 			printf("rep\n");
 		} else {
-			printf("%s%s\n", instruction.name, instruction.wide ? "w" : "b");
+			printf("%s%s\n", get_inst_name(instruction), instruction.wide ? "w" : "b");
 		}
 	}else if (instruction.type == INST_RET_DATA || instruction.type == INST_INT) {
-		printf("%s %d\n", instruction.name, instruction.data);
+		printf("%s %d\n", get_inst_name(instruction), instruction.data);
 	}else if (instruction.type == INST_SEGMENT) {
 		switch (instruction.reg & 0b11){
 			case 0b00: segment_modifier = "es:"; break;
@@ -278,7 +285,7 @@ int print_single_asm(struct Instruction instruction){
 			case 0b11: segment_modifier = "ds:"; break;
 		}
 	}else if (instruction.type == INST_NO_PARAMS) {
-		printf("%s\n", instruction.name);
+		printf("%s\n", get_inst_name(instruction));
 	} else {
 		return 0;
 	}
@@ -316,20 +323,51 @@ void print_register_with_binary(struct State* state, const char* name, int index
 	print_byte_no_new_line(state->registers[index] >> 8);
 	printf("_");
 	print_byte_no_new_line(state->registers[index] & 0b0000000011111111);
-	printf("]\n");
+	printf("]");
 }
 
-void print_registers(struct State* state){
+void print_registers(struct State* state, struct State* prev_state){
+#define compare_regs(reg) (prev_state->registers[(reg)] != state->registers[(reg)]) ? printf(" <--\n") : printf("\n")
+
 	print_register_with_binary(state, "ax", REG_AX);
+	compare_regs(REG_AX);
 	print_register_with_binary(state, "bx", REG_BX);
+	compare_regs(REG_BX);
 	print_register_with_binary(state, "cx", REG_CX);
+	compare_regs(REG_CX);
 	print_register_with_binary(state, "dx", REG_DX);
-	printf("sp: %d\n", state->registers[REG_SP]);
-	printf("bp: %d\n", state->registers[REG_BP]);
-	printf("si: %d\n", state->registers[REG_SI]);
-	printf("di: %d\n", state->registers[REG_DI]);
-	printf("es: %d\n", state->registers[REG_ES]);
-	printf("ss: %d\n", state->registers[REG_SS]);
-	printf("ds: %d\n", state->registers[REG_DS]);
-	printf("cs: %d\n", state->registers[REG_CS]);
+	compare_regs(REG_DX);
+	printf("sp: %d", state->registers[REG_SP]);
+	compare_regs(REG_SP);
+	printf("bp: %d", state->registers[REG_BP]);
+	compare_regs(REG_BP);
+	printf("si: %d", state->registers[REG_SI]);
+	compare_regs(REG_SI);
+	printf("di: %d", state->registers[REG_DI]);
+	compare_regs(REG_DI);
+	printf("es: %d", state->registers[REG_ES]);
+	compare_regs(REG_ES);
+	printf("ss: %d", state->registers[REG_SS]);
+	compare_regs(REG_SS);
+	printf("ds: %d", state->registers[REG_DS]);
+	compare_regs(REG_DS);
+	printf("cs: %d", state->registers[REG_CS]);
+	compare_regs(REG_CS);
+}
+
+void print_flags(struct State* state, struct State* prev_state){
+#define compare_flags(flag) (prev_state->flags[(flag)] != state->flags[(flag)]) ? printf(" <--\n") : printf("\n")
+
+	printf("CF: %d", state->flags[FLAG_CF]);
+	compare_flags(FLAG_CF);
+	printf("AF: %d", state->flags[FLAG_AF]);
+	compare_flags(FLAG_AF);
+	printf("SF: %d", state->flags[FLAG_SF]);
+	compare_flags(FLAG_SF);
+	printf("ZF: %d", state->flags[FLAG_ZF]);
+	compare_flags(FLAG_ZF);
+	printf("PF: %d", state->flags[FLAG_PF]);
+	compare_flags(FLAG_PF);
+	printf("OF: %d", state->flags[FLAG_OF]);
+	compare_flags(FLAG_OF);
 }

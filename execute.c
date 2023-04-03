@@ -21,42 +21,48 @@ int get_register_index(byte register_code){
 	return 0;
 }
 
+void set_arithmetic_flags(struct Instruction instruction, unsigned short reg_before, unsigned short reg_after, unsigned short other_value, struct State* state){
+	switch (instruction.name) {
+		case INST_NAME_ADD:
+		case INST_NAME_SUB:
+		case INST_NAME_CMP:
+			break;
+		default:
+			return;
+	}
+
+	state->flags[FLAG_SF] = reg_after >> 15 & 1;
+	state->flags[FLAG_ZF] = reg_after == 0;
+
+	//Brian Kernighan’s Algorithm
+	int num_bits = 0;
+	unsigned short n = reg_after;
+	while (n){
+		n &= n - 1;
+		num_bits++;
+	}
+	state->flags[FLAG_PF] = num_bits % 2 == 0;
+
+	//Skipping the carry/overflow/auxiliary flags
+}
+
 int execute_instruction(struct State* state){
 	if (state->current_instruction == state->num_instructions) return 0;
 
 	struct Instruction instruction = state->instructions[state->current_instruction++];
 
+
 	if (instruction.type == INST_R_M_TO_R_M) {
 		if (instruction.mode == 0b00) {
 			//Memory mode with no displacement*
 			if (instruction.r_m != 0b110) {
-				/*char address_calc [20];
-				get_address_calculation_with_no_displacement(address_calc, instruction.mode, instruction.r_m);
-				if (instruction.right_side_only) {
-					if (instruction.wide){
-						printf("%s word %s%s\n", instruction.name, address_calc, get_suffix(instruction));
-					} else {
-						printf("%s byte %s%s\n", instruction.name, address_calc, get_suffix(instruction));
-					}
-					return 1;
-				}
-				
-				const char* reg_name = get_register_name_from_code(instruction.wide, instruction.reg);
-				
-				if (instruction.direction) {
-					printf("%s %s, %s\n", instruction.name, reg_name, address_calc);
-				} else {
-					printf("%s %s, %s\n", instruction.name, address_calc, reg_name);
-				}*/
 				printf("INST_R_M_TO_R_M Mode 00b with R_M != 110b not implemented\n");
 			} else {
-				/*//There actually is a 16-bit displacement if r_m is 0b110
-				print_inst_with_memory_address_displacement(instruction);*/
+				//There actually is a 16-bit displacement if r_m is 0b110
 				printf("INST_R_M_TO_R_M Mode 00b with R_M == 110b not implemented\n");
 			}
 		} else if (instruction.mode == 0b01 || instruction.mode == 0b10) {
-			/*//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
-			print_inst_with_memory_address_displacement(instruction);*/
+			//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
 			printf("INST_R_M_TO_R_M Mode 01b or 10b not implemented\n");
 		} else if (instruction.mode == 0b11) {
 			int to_index;
@@ -69,78 +75,127 @@ int execute_instruction(struct State* state){
 				from_index = get_register_index(instruction.reg);
 			}
 
-			if (instruction.wide){
-				state->registers[to_index] = state->registers[from_index];
-			} else {
-				int from_is_low = from_index < 4;
-				unsigned short value = state->registers[from_index % 4];
-				value = from_is_low ? (value & 0b0000000011111111) : (value >> 8);
+			unsigned short dest_before = state->registers[to_index];
+			unsigned short dest_after = 0;
 
-				int to_is_low = to_index < 4;
-				if (to_is_low){
-					state->registers[to_index] = (state->registers[to_index] & 0b1111111100000000) + (value & 0b0000000011111111);
+			if (instruction.name == INST_NAME_MOV) {
+				if (instruction.wide) {
+					state->registers[to_index] = state->registers[from_index];
 				} else {
-					to_index = to_index % 4;
-					state->registers[to_index] = (state->registers[to_index] & 0b0000000011111111) + (value << 8);
+					int from_is_low = from_index < 4;
+					unsigned short value = state->registers[from_index % 4];
+					value = from_is_low ? (value & 0b0000000011111111) : (value >> 8);
+
+					int to_is_low = to_index < 4;
+					if (to_is_low) {
+						state->registers[to_index] = (state->registers[to_index] & 0b1111111100000000) + (value & 0b0000000011111111);
+					} else {
+						to_index = to_index % 4;
+						state->registers[to_index] = (state->registers[to_index] & 0b0000000011111111) + (value << 8);
+					}
 				}
+			}else if (instruction.name == INST_NAME_ADD) {
+				if (instruction.wide) {
+					dest_after = state->registers[to_index] + state->registers[from_index];
+					state->registers[to_index] = dest_after;
+				} else {
+					printf("INST_R_M_TO_R_M not wide for add not implemented\n");
+					return 0;
+				}
+			} else if (instruction.name == INST_NAME_SUB || instruction.name == INST_NAME_CMP) {
+				if (instruction.wide) {
+					dest_after = state->registers[to_index] - state->registers[from_index];
+				} else {
+					printf("INST_R_M_TO_R_M not for wide %s not implemented\n", get_inst_name(instruction));
+					return 0;
+				}
+
+				if (instruction.name == INST_NAME_SUB){
+					state->registers[to_index] = dest_after;
+				}
+			} else {
+				printf("INST_R_M_TO_R_M Mode 11b not implemented for %s\n", get_inst_name(instruction));
+				return 0;
 			}
+
+
+			set_arithmetic_flags(instruction, dest_before, dest_after, state->registers[from_index], state);
 			return 1;
 		}
 	} else if (instruction.type == INST_IMD_TO_R_M) {
+		int reg_index = get_register_index(instruction.r_m);
+
 		if (instruction.mode == 0b11) {
-			/*//Register mode
-			printf("%s %s, %d\n", instruction.name, get_register_name_from_code(instruction.wide, instruction.r_m), instruction.data);*/
-			printf("INST_IMD_TO_R_M Mode 11b not implemented\n");
+			//Register mode
+
+			unsigned short dest_before = state->registers[reg_index];
+			unsigned short dest_after = 0;
+			if (instruction.name == INST_NAME_ADD) {
+				if (instruction.wide) {
+					if (is_inst_wide(instruction)){
+						dest_after = state->registers[reg_index] + instruction.data;
+					} else {
+						signed char* signed_data = (signed char*)&instruction.data;
+						dest_after = state->registers[reg_index] + (*signed_data);
+					}
+
+					state->registers[reg_index] = dest_after;
+				} else {
+					printf("INST_IMD_TO_R_M not wide for add not implemented\n");
+					return 0;
+				}
+			} else if (instruction.name == INST_NAME_SUB || instruction.name == INST_NAME_CMP) {
+				if (instruction.wide) {
+					if (is_inst_wide(instruction)){
+						dest_after = state->registers[reg_index] - instruction.data;
+					} else {
+						signed char* signed_data = (signed char*)&instruction.data;
+						dest_after = state->registers[reg_index] - (*signed_data);
+					}
+				} else {
+					printf("INST_IMD_TO_R_M not wide for %s not implemented\n", get_inst_name(instruction));
+					return 0;
+				}
+
+				if (instruction.name == INST_NAME_SUB){
+					state->registers[reg_index] = dest_after;
+				}
+			} else {
+				printf("INST_IMD_TO_R_M Mode 11b not implemented for %s\n", get_inst_name(instruction));
+				return 0;
+			}
+
+			set_arithmetic_flags(instruction, dest_before, dest_after, instruction.data, state);
+			return 1;
 		} else {
-			/*//Memory mode
-			char buffer[20];
-			if (instruction.mode == 0b00 && instruction.r_m != 0b110) {
-				get_address_calculation_with_no_displacement(buffer, instruction.mode, instruction.r_m);
-			} else {
-				get_address_calculation_with_displacement(buffer, instruction.mode, instruction.r_m, instruction.disp);
-			}
-
-			const char* prefix = "byte";
-			if (instruction.wide){
-				prefix = "word";
-			}
-
-			byte is_wide = instruction.name == mov_name ? instruction.wide : (!instruction.sign && instruction.wide);
-			if (is_wide) {
-				printf("%s %s %s, word %d\n", instruction.name, prefix, buffer, instruction.data);
-			} else {
-				printf("%s %s %s, byte %d\n", instruction.name, prefix, buffer, instruction.data);
-			}*/
-			printf("INST_IMD_TO_R_M Mode everything but 11b not implemented\n");
+			//Memory mode
+			printf("INST_IMD_TO_R_M Mode everything but 11b not implemented for %s\n", get_inst_name(instruction));
 		}
 	} else if (instruction.type == INST_IMD_TO_REG) {
 		int reg_index = get_register_index(instruction.reg);
-		if (instruction.wide) {
-			state->registers[reg_index] = instruction.data;
-		} else {
-			int is_low = reg_index < 4;
-			if (is_low){
-				state->registers[reg_index] = (state->registers[reg_index] & 0b1111111100000000) + (instruction.data & 0b0000000011111111);
+
+		if (instruction.name == INST_NAME_MOV) {
+			if (instruction.wide) {
+				state->registers[reg_index] = instruction.data;
 			} else {
-				reg_index = reg_index % 4;
-				state->registers[reg_index] = (state->registers[reg_index] & 0b0000000011111111) + (instruction.data << 8);
+				int is_low = reg_index < 4;
+				if (is_low) {
+					state->registers[reg_index] = (state->registers[reg_index] & 0b1111111100000000) + (instruction.data & 0b0000000011111111);
+				} else {
+					reg_index = reg_index % 4;
+					state->registers[reg_index] = (state->registers[reg_index] & 0b0000000011111111) + (instruction.data << 8);
+				}
 			}
-		}
-		return 1;
-	} else if (instruction.type == INST_MEM_TO_ACC_VV) {
-		/*const char* acc;
-		if (instruction.wide) {
-			acc = "ax";
 		} else {
-			acc = "al";
+			printf("INST_IMD_TO_REG not implemented for %s\n", get_inst_name(instruction));
+			return 0;
 		}
 
-		if (instruction.direction) {
-			printf("%s [%d], %s\n", instruction.name, instruction.address, acc);
-		} else {
-			printf("%s %s, [%d]\n", instruction.name, acc, instruction.address);
-		}*/
+		return 1;
+	} else if (instruction.type == INST_MEM_TO_ACC_VV) {
 		printf("INST_MEM_TO_ACC_VV not implemented\n");
+	} else {
+		printf("Instruction type %d not implemented\n", instruction.type);
 	}
 	return 0;
 }
