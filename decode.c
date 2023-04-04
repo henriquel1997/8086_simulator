@@ -13,6 +13,231 @@ void print_byte(byte b){
 #endif
 }
 
+int decode_r_m_to_r_m(struct Instruction* instruction, struct State* state){
+	//Register/Memory to Register/Memory
+	byte first_byte = read_byte(state);
+
+	if(!instruction->direction)
+		instruction->direction = first_byte & 0b00000010;
+			
+	if(!instruction->wide)
+		instruction->wide = first_byte & 0b00000001;
+
+	if (code_ended(state)) {
+		printf("Missing second byte of MOV\n");
+		return 0;
+	}
+
+	byte second_byte = read_byte(state);
+	print_byte(second_byte);
+
+
+	instruction->mode = second_byte >> 6;
+	instruction->reg += (second_byte >> 3) & 0b111;
+	instruction->r_m = (second_byte >> 0) & 0b111;
+
+	if (instruction->mode == 0b00 && instruction->r_m == 0b110) {
+		//Memory mode with no displacement*
+		//*There actually is a 16-bit displacement if r_m is 0b110
+		byte* disp_pointer = (byte*) &instruction->disp;
+		disp_pointer[0] = read_byte(state);
+		print_byte(disp_pointer[0]);
+		disp_pointer[1] = read_byte(state);
+		print_byte(disp_pointer[1]);
+					
+	} else if (instruction->mode == 0b01 || instruction->mode == 0b10) {
+		//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
+		byte d_low = read_byte(state);
+		print_byte(d_low);
+
+		if (instruction->mode == 0b10) {
+			byte* disp_pointer = (byte*) &instruction->disp;
+			disp_pointer[0] = d_low;
+			disp_pointer[1] = read_byte(state);
+			print_byte(disp_pointer[1]);
+		} else {
+			instruction->disp = (char)d_low;
+		}
+	}
+
+	return 1;
+}
+
+int decode_imd_to_r_m(struct Instruction* instruction, struct State* state){
+	//Immediate to Register or Memory
+	byte first_byte = read_byte(state);
+
+	instruction->sign = (first_byte & 0b00000010) >> 1;
+	instruction->wide = first_byte & 0b00000001;
+	byte is_wide = is_inst_wide(*instruction);
+
+	byte second_byte = read_byte(state);
+	print_byte(second_byte);
+
+	instruction->mode = second_byte >> 6;
+	instruction->r_m = (second_byte >> 0) & 0b111;
+
+	byte* data_pointer = (byte*) &instruction->data;
+
+	if (instruction->mode == 0b11){
+		//Register mode
+		data_pointer[0] = read_byte(state);
+		print_byte(data_pointer[0]);
+
+		if (is_wide){
+			data_pointer[1] = read_byte(state);
+			print_byte(data_pointer[1]);
+		}
+	} else {
+		//Memory mode
+		if (instruction->mode == 0b00 && instruction->r_m != 0b110) {
+			data_pointer[0] = read_byte(state);
+			print_byte(data_pointer[0]);
+
+			if (is_wide) {
+				data_pointer[1] = read_byte(state);
+				print_byte(data_pointer[1]);
+			}
+		} else {
+			byte disp_low = read_byte(state);
+			print_byte(disp_low);
+
+			if (instruction->wide){
+				byte* disp_pointer = (byte*) &instruction->disp;
+
+				disp_pointer[0] = disp_low;
+				disp_pointer[1] = read_byte(state);
+				print_byte(disp_pointer[1]);
+			} else {
+				instruction->disp = (char) disp_low;
+			}
+
+			data_pointer[0] = read_byte(state);
+			print_byte(data_pointer[0]);
+
+			if (is_wide) {
+				data_pointer[1] = read_byte(state);
+				print_byte(data_pointer[1]);
+			}
+		}
+	}
+
+	return 1;
+}
+
+int decode_imd_to_reg(struct Instruction* instruction, struct State* state){
+	//Immediate to Register
+	byte first_byte = read_byte(state);
+
+	instruction->wide = first_byte & 0b00001000;
+	instruction->reg = first_byte & 0b00000111;
+
+	byte* data_pointer = (byte*) &instruction->data;
+
+	data_pointer[0] = read_byte(state);
+	print_byte(data_pointer[0]);
+
+	if (instruction->wide){
+		data_pointer[1] = read_byte(state);
+		print_byte(data_pointer[1]);
+	}
+
+	return 1;
+}
+
+int decode_mem_to_acc_or_vice_versa(struct Instruction* instruction, struct State* state){
+	//Memory to Accumulator or Accumulator to Memory
+	byte first_byte = read_byte(state);
+
+	instruction->direction = first_byte & 0b00000010;
+	instruction->wide 		= first_byte & 0b00000001;
+
+	byte* address_pointer = (byte*) &instruction->address;
+
+	address_pointer[0] = read_byte(state);
+	print_byte(address_pointer[0]);
+
+	address_pointer[1] = read_byte(state);
+	print_byte(address_pointer[1]);
+
+	return 1;
+}
+
+int decode_imd_to_acc(struct Instruction* instruction, struct State* state) {
+	byte first_byte = read_byte(state);
+
+	instruction->wide = first_byte & 0b00000001;
+
+	byte* data_pointer = (byte*) &instruction->data;
+
+	data_pointer[0] = read_byte(state);
+	print_byte(data_pointer[0]);
+
+	if (instruction->wide){
+		data_pointer[1] = read_byte(state);
+		print_byte(data_pointer[1]);
+	}
+
+	return 1;
+}
+
+int decode_register_inst(struct Instruction* instruction, struct State* state) {
+	instruction->reg = read_byte(state) & 0b00000111;
+	return 1;
+}
+
+int decode_segment_inst(struct Instruction* instruction, struct State* state) {
+	instruction->reg = (read_byte(state) & 0b00011000) >> 3;
+	return 1;
+}
+
+int decode_fixed_port_inst(struct Instruction* instruction, struct State* state) {
+	instruction->wide = read_byte(state) & 0b00000001;
+			
+	byte second_byte = read_byte(state);
+	print_byte(second_byte);
+
+	instruction->data = second_byte;
+	return 1;
+}
+
+int decode_variable_port_or_string_manipulation_inst(struct Instruction* instruction, struct State* state) {
+	instruction->wide = read_byte(state) & 0b00000001;
+	return 1;
+}
+
+int decode_ret_data_inst(struct Instruction* instruction, struct State* state){
+	read_byte(state);
+
+	byte* data_pointer = (byte*) &instruction->data;
+
+	data_pointer[0] = read_byte(state);
+	print_byte(data_pointer[0]);
+
+	data_pointer[1] = read_byte(state);
+	print_byte(data_pointer[1]);
+
+	return 1;
+}
+
+int decode_int_inst(struct Instruction* instruction, struct State* state){
+	read_byte(state);
+	if (!instruction->data){
+		byte data = read_byte(state);
+		print_byte(data);
+		instruction->data = data;
+	}
+
+	return 1;
+}
+
+int decode_conditional_jump(struct Instruction* instruction, struct State* state){
+	read_byte(state);
+	instruction->jump_increment = read_byte(state);
+	print_byte(instruction->jump_increment);
+	return 1;
+}
+
 enum InstructionName get_instruction_name_from_middle_bits(byte b){
 	switch ((b & 0b00111000) >> 3){
 		case 0b000: return INST_NAME_ADD;
@@ -27,34 +252,53 @@ enum InstructionName get_instruction_name_from_middle_bits(byte b){
 	return 0;
 }
 
-int set_instruction_name_and_type(struct Instruction* instruction, byte first_byte, byte next_byte){
+int decode_instruction(struct Instruction* instruction, struct State* state){
+	byte first_byte = peek_byte(state, 0);
+	byte next_byte = peek_byte(state, 1);
+
 	if ((first_byte & 0b11111100) == 0b10001000) {
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_MOV;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	}else if ((first_byte & 0b11111110) == 0b11000110) {
 		instruction->type = INST_IMD_TO_R_M;
 		instruction->name = INST_NAME_MOV;
+		if (decode_imd_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11110000) == 0b10110000) {
 		instruction->type = INST_IMD_TO_REG;
 		instruction->name = INST_NAME_MOV;
+		if (decode_imd_to_reg(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111100) == 0b10100000){
 		instruction->type = INST_MEM_TO_ACC_VV;
 		instruction->name = INST_NAME_MOV;
+		if (decode_mem_to_acc_or_vice_versa(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111101) == 0b10001100){
 		//Register/Memory to Segment Register (vice-versa)
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_MOV;
 		instruction->wide = 1;
 		instruction->reg = 0b1000;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11000100) == 0b00000000){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = get_instruction_name_from_middle_bits(first_byte);
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111100) == 0b10000000){
 		instruction->type = INST_IMD_TO_R_M;
 		instruction->name = get_instruction_name_from_middle_bits(next_byte);
+		if (decode_imd_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11000110) == 0b00000100){
 		instruction->type = INST_IMD_TO_ACC;
 		instruction->name = get_instruction_name_from_middle_bits(first_byte);
+		if (decode_imd_to_acc(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111110) == 0b11111110){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->right_side_only = 1;
@@ -67,6 +311,9 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 			case 0b110: instruction->name = INST_NAME_PUSH; break;
 			default: return 0;
 		}
+
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111110) == 0b11110110){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->right_side_only = 1;
@@ -76,6 +323,9 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 				instruction->type = INST_IMD_TO_R_M;
 				instruction->name = INST_NAME_TEST;
 				instruction->right_side_only = 0;
+
+				if (decode_imd_to_r_m(instruction, state))
+					return 1;
 			} break;
 			case 0b010: instruction->name = INST_NAME_NOT; break;
 			case 0b011: instruction->name = INST_NAME_NEG; break;
@@ -85,6 +335,9 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 			case 0b111: instruction->name = INST_NAME_IDIV; break;
 			default: return 0;
 		}
+
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111100) == 0b11010000){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->right_side_only = 2;
@@ -99,6 +352,9 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 			case 0b111: instruction->name = INST_NAME_SAR; break;
 			default: return 0;
 		}
+
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11100000) == 0b01000000){
 		instruction->type = INST_REGISTER;
 
@@ -109,50 +365,79 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 			case 0b011: instruction->name = INST_NAME_POP; break;
 			default: return 0;
 		}
+
+		if (decode_register_inst(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11100111) == 0b00000110){
 		instruction->type = INST_SEGMENT_REGISTER;
 		instruction->name = INST_NAME_PUSH;
+		if (decode_segment_inst(instruction, state))
+			return 1;
 	} else if (first_byte == 0b10001111){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_POP;
 		instruction->right_side_only = 1;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11100111) == 0b00000111){
 		instruction->type = INST_SEGMENT_REGISTER;
 		instruction->name = INST_NAME_POP;
+		if (decode_segment_inst(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111110) == 0b10000110){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_XCHG;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111000) == 0b10010000){
 		instruction->type = INST_REGISTER;
 		instruction->name = INST_NAME_XCHG;
+		if (decode_register_inst(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111100) == 0b11100100){
 		instruction->type = INST_FIXED_PORT;
 		instruction->name = (first_byte & 0b10) ? INST_NAME_OUT : INST_NAME_IN;
+		if (decode_fixed_port_inst(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111100) == 0b11101100){
 		instruction->type = INST_VARIABLE_PORT;
 		instruction->name = (first_byte & 0b10) ? INST_NAME_OUT : INST_NAME_IN;
+		if (decode_variable_port_or_string_manipulation_inst(instruction, state))
+			return 1;
 	} else if (first_byte == 0b10001101){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_LEA;
 		instruction->direction = 1;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if (first_byte == 0b11000101){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_LDS;
 		instruction->direction = 1;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if (first_byte == 0b11000100){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_LES;
 		instruction->direction = 1;
 		instruction->wide = 1;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111100) == 0b10000100){
 		instruction->type = INST_R_M_TO_R_M;
 		instruction->name = INST_NAME_TEST;
+		if (decode_r_m_to_r_m(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111110) == 0b10101000){
 		instruction->type = INST_IMD_TO_ACC;
 		instruction->name = INST_NAME_TEST;
+		if (decode_imd_to_acc(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11111110) == 0b11110010){
 		instruction->type = INST_STRING_MANIPULATION;
 		instruction->name = INST_NAME_REP;
+		if (decode_variable_port_or_string_manipulation_inst(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11110000) == 0b10100000){
 		instruction->type = INST_STRING_MANIPULATION;
 		switch ((first_byte & 0b00001110) >> 1){
@@ -163,9 +448,12 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 			case 0b111: instruction->name = INST_NAME_SCAS; break;
 			default: return 0;
 		}
+		if (decode_variable_port_or_string_manipulation_inst(instruction, state))
+			return 1;
 	} else if ((first_byte & 0b11110111) == 0b11000010){
 		instruction->type = INST_RET_DATA;
 		instruction->name = INST_NAME_RET;
+		if (decode_ret_data_inst(instruction, state)) return 1;
 	} else if ((first_byte & 0b11111110) == 0b11001100) {
 		instruction->type = INST_INT;
 		instruction->name = INST_NAME_INT;
@@ -173,8 +461,11 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 		if(!(first_byte & 0b00000001)){
 			instruction->data = 3;
 		}
+
+		if (decode_int_inst(instruction, state)) return 1;
 	} else if ((first_byte & 0b11100111) == 0b00100110) {
 		instruction->type = INST_SEGMENT;
+		if (decode_segment_inst(instruction, state)) return 1;
 	}else{
 		//Instructions with no parameters
 		switch (first_byte){
@@ -191,14 +482,18 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 				if (next_byte == 0b00001010){
 					instruction->name = INST_NAME_AAM;
 					instruction->type = INST_NO_PARAMS;
-					return 2;
+					read_byte(state);
+					read_byte(state);
+					return 1;
 				}
 			} break;
 			case 0b11010101: {
 				if (next_byte == 0b00001010){
 					instruction->name = INST_NAME_AAD;
 					instruction->type = INST_NO_PARAMS;
-					return 2;
+					read_byte(state);
+					read_byte(state);
+					return 1;
 				}
 			} break;
 			case 0b10011000: instruction->name = INST_NAME_CBW; break;
@@ -221,6 +516,7 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 
 		if (instruction->name){
 			instruction->type = INST_NO_PARAMS;
+			read_byte(state);
 			return 1;
 		}
 
@@ -249,217 +545,12 @@ int set_instruction_name_and_type(struct Instruction* instruction, byte first_by
 		}
 		if (instruction->name){
 			instruction->type = INST_CONDITIONAL_JUMP;
-			return 1;
+			if (decode_conditional_jump(instruction, state))
+				return 1;
 		}
 
 		return 0;
 	}
-	return 1;
-}
 
-long decode(struct String code, struct Instruction* buffer){
-	long instruction_counter = 0;
-
-	long instruction_start = 0;
-	for(long i = 0; i < code.size; i++){
-		struct Instruction instruction = { 0 };
-
-		byte first_byte = code.data[i];
-		print_byte(first_byte);
-
-		int result = set_instruction_name_and_type(&instruction, first_byte, code.data[i + 1]);
-		if (!result){
-			printf("Instruction not implemented (1)\n");
-			return instruction_counter;
-		} else if (result == 2){
-			i++; //Second byte was used in the instruction parsing
-		}else if (instruction.type == INST_R_M_TO_R_M) {
-			//Register/Memory to Register/Memory
-			if(!instruction.direction)
-				instruction.direction = first_byte & 0b00000010;
-			
-			if(!instruction.wide)
-				instruction.wide = first_byte & 0b00000001;
-
-			if (i + 1 >= code.size) {
-				printf("Missing second byte of MOV\n");
-				return 0;
-			}
-
-			byte second_byte = code.data[++i];
-			print_byte(second_byte);
-
-
-			instruction.mode = second_byte >> 6;
-			instruction.reg += (second_byte >> 3) & 0b111;
-			instruction.r_m = (second_byte >> 0) & 0b111;
-
-			if (instruction.mode == 0b00 && instruction.r_m == 0b110) {
-				//Memory mode with no displacement*
-				//*There actually is a 16-bit displacement if r_m is 0b110
-				byte* disp_pointer = (byte*) &instruction.disp;
-				disp_pointer[0] = code.data[++i];
-				print_byte(disp_pointer[0]);
-				disp_pointer[1] = code.data[++i];
-				print_byte(disp_pointer[1]);
-					
-			} else if (instruction.mode == 0b01 || instruction.mode == 0b10) {
-				//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
-				byte d_low = code.data[++i];
-				print_byte(d_low);
-
-				if (instruction.mode == 0b10) {
-					byte* disp_pointer = (byte*) &instruction.disp;
-					disp_pointer[0] = d_low;
-					disp_pointer[1] = code.data[++i];
-					print_byte(disp_pointer[1]);
-				} else {
-					instruction.disp = (char)d_low;
-				}
-			}
-		}else if (instruction.type == INST_IMD_TO_R_M) {
-			//Immediate to Register or Memory
-			instruction.sign = (first_byte & 0b00000010) >> 1;
-			instruction.wide = first_byte & 0b00000001;
-			byte is_wide = is_inst_wide(instruction);
-
-			byte second_byte = code.data[++i];
-			print_byte(second_byte);
-
-			instruction.mode = second_byte >> 6;
-			instruction.r_m = (second_byte >> 0) & 0b111;
-
-			byte* data_pointer = (byte*) &instruction.data;
-
-			if (instruction.mode == 0b11){
-				//Register mode
-				data_pointer[0] = code.data[++i];
-				print_byte(data_pointer[0]);
-
-				if (is_wide){
-					data_pointer[1] = code.data[++i];
-					print_byte(data_pointer[1]);
-				}
-			} else {
-				//Memory mode
-				if (instruction.mode == 0b00 && instruction.r_m != 0b110) {
-					data_pointer[0] = code.data[++i];
-					print_byte(data_pointer[0]);
-
-					if (is_wide) {
-						data_pointer[1] = code.data[++i];
-						print_byte(data_pointer[1]);
-					}
-				} else {
-					byte disp_low = code.data[++i];
-					print_byte(disp_low);
-
-					if (instruction.wide){
-						byte* disp_pointer = (byte*) &instruction.disp;
-
-						disp_pointer[0] = disp_low;
-						disp_pointer[1] = code.data[++i];
-						print_byte(disp_pointer[1]);
-					} else {
-						instruction.disp = (char) disp_low;
-					}
-
-					data_pointer[0] = code.data[++i];
-					print_byte(data_pointer[0]);
-
-					if (is_wide) {
-						data_pointer[1] = code.data[++i];
-						print_byte(data_pointer[1]);
-					}
-				}
-			}
-
-		}else if (instruction.type == INST_IMD_TO_REG) {
-			//Immediate to Register
-			instruction.wide = first_byte & 0b00001000;
-			instruction.reg = first_byte & 0b00000111;
-
-			byte* data_pointer = (byte*) &instruction.data;
-
-			data_pointer[0] = code.data[++i];
-			print_byte(data_pointer[0]);
-
-			if (instruction.wide){
-				data_pointer[1] = code.data[++i];
-				print_byte(data_pointer[1]);
-			}
-		}else if (instruction.type == INST_MEM_TO_ACC_VV) {
-			//Memory to Accumulator or Accumulator to Memory
-			instruction.direction = first_byte & 0b00000010;
-			instruction.wide 		= first_byte & 0b00000001;
-
-			byte* address_pointer = (byte*) &instruction.address;
-
-			address_pointer[0] = code.data[++i];
-			print_byte(address_pointer[0]);
-
-			address_pointer[1] = code.data[++i];
-			print_byte(address_pointer[1]);
-		}else if (instruction.type == INST_IMD_TO_ACC) {
-			instruction.wide = first_byte & 0b00000001;
-
-			byte* data_pointer = (byte*) &instruction.data;
-
-			data_pointer[0] = code.data[++i];
-			print_byte(data_pointer[0]);
-
-			if (instruction.wide){
-				data_pointer[1] = code.data[++i];
-				print_byte(data_pointer[1]);
-			}
-		}else if (instruction.type == INST_CONDITIONAL_JUMP) {
-			instruction.jump_increment = code.data[++i];
-			print_byte(instruction.jump_increment);
-		}else if (instruction.type == INST_REGISTER) {
-			instruction.reg = first_byte & 0b00000111;
-		}else if (instruction.type == INST_SEGMENT_REGISTER || instruction.type == INST_SEGMENT) {
-			instruction.reg = (first_byte & 0b00011000) >> 3;
-		}else if (instruction.type == INST_FIXED_PORT) {
-			instruction.wide = first_byte & 0b00000001;
-			
-			byte second_byte = code.data[++i];
-			print_byte(second_byte);
-
-			instruction.data = second_byte;
-		}else if (instruction.type == INST_VARIABLE_PORT) {
-			instruction.wide = first_byte & 0b00000001;
-		}else if (instruction.type == INST_STRING_MANIPULATION) {
-			instruction.wide = first_byte & 0b00000001;
-		}else if (instruction.type == INST_RET_DATA) {
-			byte* data_pointer = (byte*) &instruction.data;
-
-			data_pointer[0] = code.data[++i];
-			print_byte(data_pointer[0]);
-
-			data_pointer[1] = code.data[++i];
-			print_byte(data_pointer[1]);
-		}else if (instruction.type == INST_INT) {
-			if (!instruction.data){
-				byte data = code.data[++i];
-				print_byte(data);
-				instruction.data = data;
-			}
-		}else if(instruction.type != INST_NO_PARAMS){
-			printf("Instruction not implemented (2)\n");
-			return instruction_counter;
-		}
-
-		instruction.num_bytes = i - instruction_start;
-		instruction_start = i;
-
-		buffer[instruction_counter++] = instruction;
-#if DEBUG
-		if (!print_single_asm(instruction)){
-			printf("Error printing instruction\n");
-			return instruction_counter;
-		}
-#endif
-	}
-
-	return instruction_counter;
+	return 0;
 }

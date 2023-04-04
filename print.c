@@ -353,6 +353,8 @@ void print_registers(struct State* state, struct State* prev_state){
 	compare_regs(REG_DS);
 	printf("cs: %d", state->registers[REG_CS]);
 	compare_regs(REG_CS);
+	printf("ip: %d", state->registers[REG_IP]);
+	printf("\n");
 }
 
 void print_flags(struct State* state, struct State* prev_state){

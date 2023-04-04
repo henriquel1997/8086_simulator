@@ -155,6 +155,7 @@ enum Register {
 	REG_CS, //Code segment
 	REG_SS, //Stack segment
 	REG_DS, //Data segment
+	REG_IP, //Instruction Pointer
 	NUM_REGS
 };
 
@@ -171,10 +172,21 @@ enum Flags {
 struct State {
 	unsigned short registers[NUM_REGS];
 	byte flags[NUM_FLAGS];
-	long num_instructions;
-	struct Instruction* instructions;
-	long current_instruction;
+	struct String code;
+	int should_execute;
 };
+
+byte peek_byte(struct State* state, byte offset){
+	return state->code.data[state->registers[REG_IP] + offset];
+}
+
+byte read_byte(struct State* state){
+	return state->code.data[state->registers[REG_IP]++];
+}
+
+byte code_ended(struct State* state){
+	return state->registers[REG_IP] >= state->code.size;
+}
 
 byte is_inst_wide(struct Instruction instruction){
 	return instruction.name == INST_NAME_MOV ? instruction.wide : (instruction.wide && !instruction.sign);
