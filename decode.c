@@ -16,6 +16,7 @@ void print_byte(byte b){
 int decode_r_m_to_r_m(struct Instruction* instruction, struct State* state){
 	//Register/Memory to Register/Memory
 	byte first_byte = read_byte(state);
+	print_byte(first_byte);
 
 	if(!instruction->direction)
 		instruction->direction = first_byte & 0b00000010;
@@ -66,6 +67,7 @@ int decode_r_m_to_r_m(struct Instruction* instruction, struct State* state){
 int decode_imd_to_r_m(struct Instruction* instruction, struct State* state){
 	//Immediate to Register or Memory
 	byte first_byte = read_byte(state);
+	print_byte(first_byte);
 
 	instruction->sign = (first_byte & 0b00000010) >> 1;
 	instruction->wide = first_byte & 0b00000001;
@@ -128,6 +130,7 @@ int decode_imd_to_r_m(struct Instruction* instruction, struct State* state){
 int decode_imd_to_reg(struct Instruction* instruction, struct State* state){
 	//Immediate to Register
 	byte first_byte = read_byte(state);
+	print_byte(first_byte);
 
 	instruction->wide = first_byte & 0b00001000;
 	instruction->reg = first_byte & 0b00000111;
@@ -148,6 +151,7 @@ int decode_imd_to_reg(struct Instruction* instruction, struct State* state){
 int decode_mem_to_acc_or_vice_versa(struct Instruction* instruction, struct State* state){
 	//Memory to Accumulator or Accumulator to Memory
 	byte first_byte = read_byte(state);
+	print_byte(first_byte);
 
 	instruction->direction = first_byte & 0b00000010;
 	instruction->wide 		= first_byte & 0b00000001;
@@ -165,6 +169,7 @@ int decode_mem_to_acc_or_vice_versa(struct Instruction* instruction, struct Stat
 
 int decode_imd_to_acc(struct Instruction* instruction, struct State* state) {
 	byte first_byte = read_byte(state);
+	print_byte(first_byte);
 
 	instruction->wide = first_byte & 0b00000001;
 
@@ -182,17 +187,26 @@ int decode_imd_to_acc(struct Instruction* instruction, struct State* state) {
 }
 
 int decode_register_inst(struct Instruction* instruction, struct State* state) {
-	instruction->reg = read_byte(state) & 0b00000111;
+	byte first_byte = read_byte(state);
+	print_byte(first_byte);
+
+	instruction->reg = first_byte & 0b00000111;
 	return 1;
 }
 
 int decode_segment_inst(struct Instruction* instruction, struct State* state) {
-	instruction->reg = (read_byte(state) & 0b00011000) >> 3;
+	byte first_byte = read_byte(state);
+	print_byte(first_byte);
+
+	instruction->reg = (first_byte & 0b00011000) >> 3;
 	return 1;
 }
 
 int decode_fixed_port_inst(struct Instruction* instruction, struct State* state) {
-	instruction->wide = read_byte(state) & 0b00000001;
+	byte first_byte = read_byte(state);
+	print_byte(first_byte);
+
+	instruction->wide = first_byte & 0b00000001;
 			
 	byte second_byte = read_byte(state);
 	print_byte(second_byte);
@@ -202,12 +216,15 @@ int decode_fixed_port_inst(struct Instruction* instruction, struct State* state)
 }
 
 int decode_variable_port_or_string_manipulation_inst(struct Instruction* instruction, struct State* state) {
-	instruction->wide = read_byte(state) & 0b00000001;
+	byte first_byte = read_byte(state);
+	print_byte(first_byte);
+
+	instruction->wide = first_byte & 0b00000001;
 	return 1;
 }
 
 int decode_ret_data_inst(struct Instruction* instruction, struct State* state){
-	read_byte(state);
+	print_byte(read_byte(state));
 
 	byte* data_pointer = (byte*) &instruction->data;
 
@@ -221,7 +238,8 @@ int decode_ret_data_inst(struct Instruction* instruction, struct State* state){
 }
 
 int decode_int_inst(struct Instruction* instruction, struct State* state){
-	read_byte(state);
+	print_byte(read_byte(state));
+
 	if (!instruction->data){
 		byte data = read_byte(state);
 		print_byte(data);
@@ -232,7 +250,8 @@ int decode_int_inst(struct Instruction* instruction, struct State* state){
 }
 
 int decode_conditional_jump(struct Instruction* instruction, struct State* state){
-	read_byte(state);
+	print_byte(read_byte(state));
+
 	instruction->jump_increment = read_byte(state);
 	print_byte(instruction->jump_increment);
 	return 1;
@@ -482,8 +501,8 @@ int decode_instruction(struct Instruction* instruction, struct State* state){
 				if (next_byte == 0b00001010){
 					instruction->name = INST_NAME_AAM;
 					instruction->type = INST_NO_PARAMS;
-					read_byte(state);
-					read_byte(state);
+					print_byte(read_byte(state));
+					print_byte(read_byte(state));
 					return 1;
 				}
 			} break;
@@ -491,8 +510,8 @@ int decode_instruction(struct Instruction* instruction, struct State* state){
 				if (next_byte == 0b00001010){
 					instruction->name = INST_NAME_AAD;
 					instruction->type = INST_NO_PARAMS;
-					read_byte(state);
-					read_byte(state);
+					print_byte(read_byte(state));
+					print_byte(read_byte(state));
 					return 1;
 				}
 			} break;
@@ -516,7 +535,7 @@ int decode_instruction(struct Instruction* instruction, struct State* state){
 
 		if (instruction->name){
 			instruction->type = INST_NO_PARAMS;
-			read_byte(state);
+			print_byte(read_byte(state));
 			return 1;
 		}
 

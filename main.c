@@ -67,6 +67,9 @@ int decode_and_execute(struct State* state){
 	if (state->should_execute){
 		printf("\nFinal registers:\n");
 		print_registers(state, &prev_state);
+		printf("\nFinal Flags:\n");
+		print_flags(state, &prev_state);
+		printf("\n");
 	}
 	return 1;
 }

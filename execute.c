@@ -21,8 +21,8 @@ int get_register_index(byte register_code){
 	return 0;
 }
 
-void set_arithmetic_flags(struct Instruction instruction, unsigned short reg_before, unsigned short reg_after, unsigned short other_value, struct State* state){
-	switch (instruction.name) {
+void set_arithmetic_flags(enum InstructionName name, unsigned short reg_after, struct State* state){
+	switch (name) {
 		case INST_NAME_ADD:
 		case INST_NAME_SUB:
 		case INST_NAME_CMP:
@@ -36,17 +36,26 @@ void set_arithmetic_flags(struct Instruction instruction, unsigned short reg_bef
 
 	//Brian Kernighan’s Algorithm
 	int num_bits = 0;
-	unsigned short n = reg_after;
+	unsigned short n = reg_after & 0b11111111;
 	while (n){
 		n &= n - 1;
 		num_bits++;
 	}
 	state->flags[FLAG_PF] = num_bits % 2 == 0;
-
-	//Skipping the carry/overflow/auxiliary flags
 }
 
 int execute_instruction(struct Instruction instruction, struct State* state){
+#define set_carry_flag_add(operand1, operand2) state->flags[FLAG_CF] = (((((unsigned int) (operand1)) + ((unsigned int) operand2)) >> 16) > 0)
+#define set_carry_flag_add_byte(operand1, operand2) state->flags[FLAG_CF] = (((((unsigned short) (operand1)) + ((unsigned short) operand2)) >> 8) > 0)
+#define set_carry_flag_sub(operand1, operand2) state->flags[FLAG_CF] = ((operand1) < (operand2))
+
+//TODO: This aux flag is stil not working properly on listing 47, seems to work fine on listing 50 though
+#define set_carry_aux_flag_add(operand1, operand2) state->flags[FLAG_AF] = (((((unsigned short)(((unsigned char*) &(operand1))[0])) + ((unsigned short)(((unsigned char*) &(operand2))[0]))) >> 8) > 0)
+#define set_carry_aux_flag_sub(operand1, operand2) state->flags[FLAG_AF] = (((unsigned char*) &(operand1))[0] < ((unsigned char*) &(operand2))[0])
+
+#define set_overflow_flag_add(operand1, operand2, result) state->flags[FLAG_OF] = ((((operand1) >> 15) == ((operand2) >> 15)) && (((operand2) >> 15) != ((result) >> 15)))
+#define set_overflow_flag_sub(operand1, operand2, result) state->flags[FLAG_OF] = ((((operand1) >> 15) != ((operand2) >> 15)) && (((operand2) >> 15) == ((result) >> 15)))
+
 	if (instruction.type == INST_R_M_TO_R_M) {
 		if (instruction.mode == 0b00) {
 			//Memory mode with no displacement*
@@ -92,6 +101,11 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 			}else if (instruction.name == INST_NAME_ADD) {
 				if (instruction.wide) {
 					dest_after = state->registers[to_index] + state->registers[from_index];
+
+					set_carry_flag_add(state->registers[to_index], state->registers[from_index]);
+					set_carry_aux_flag_add(state->registers[to_index], state->registers[from_index]);
+					set_overflow_flag_add(state->registers[to_index], state->registers[from_index], dest_after);
+					
 					state->registers[to_index] = dest_after;
 				} else {
 					printf("INST_R_M_TO_R_M not wide for add not implemented\n");
@@ -100,6 +114,10 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 			} else if (instruction.name == INST_NAME_SUB || instruction.name == INST_NAME_CMP) {
 				if (instruction.wide) {
 					dest_after = state->registers[to_index] - state->registers[from_index];
+
+					set_carry_flag_sub(state->registers[to_index], state->registers[from_index]);
+					set_carry_aux_flag_sub(state->registers[to_index], state->registers[from_index]);
+					set_overflow_flag_sub(state->registers[to_index], state->registers[from_index], dest_after);
 				} else {
 					printf("INST_R_M_TO_R_M not for wide %s not implemented\n", get_inst_name(instruction));
 					return 0;
@@ -114,7 +132,7 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 			}
 
 
-			set_arithmetic_flags(instruction, dest_before, dest_after, state->registers[from_index], state);
+			set_arithmetic_flags(instruction.name, dest_after, state);
 			return 1;
 		}
 	} else if (instruction.type == INST_IMD_TO_R_M) {
@@ -129,9 +147,17 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 				if (instruction.wide) {
 					if (is_inst_wide(instruction)){
 						dest_after = state->registers[reg_index] + instruction.data;
+
+						set_carry_flag_add(state->registers[reg_index], instruction.data);
+						set_carry_aux_flag_add(state->registers[reg_index], instruction.data);
+						set_overflow_flag_add(state->registers[reg_index], instruction.data, dest_after);
 					} else {
 						signed char* signed_data = (signed char*)&instruction.data;
 						dest_after = state->registers[reg_index] + (*signed_data);
+
+						set_carry_flag_add_byte(state->registers[reg_index], (*signed_data));
+						set_carry_aux_flag_add(state->registers[reg_index], (*signed_data));
+						set_overflow_flag_add(state->registers[reg_index], (*signed_data), dest_after);
 					}
 
 					state->registers[reg_index] = dest_after;
@@ -143,9 +169,17 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 				if (instruction.wide) {
 					if (is_inst_wide(instruction)){
 						dest_after = state->registers[reg_index] - instruction.data;
+
+						set_carry_flag_sub(state->registers[reg_index], instruction.data);
+						set_carry_aux_flag_sub(state->registers[reg_index], instruction.data);
+						set_overflow_flag_sub(state->registers[reg_index], instruction.data, dest_after);
 					} else {
 						signed char* signed_data = (signed char*)&instruction.data;
 						dest_after = state->registers[reg_index] - (*signed_data);
+
+						set_carry_flag_sub(state->registers[reg_index], (*signed_data));
+						set_carry_aux_flag_sub(state->registers[reg_index], (*signed_data));
+						set_overflow_flag_sub(state->registers[reg_index], (*signed_data), dest_after);
 					}
 				} else {
 					printf("INST_IMD_TO_R_M not wide for %s not implemented\n", get_inst_name(instruction));
@@ -160,7 +194,7 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 				return 0;
 			}
 
-			set_arithmetic_flags(instruction, dest_before, dest_after, instruction.data, state);
+			set_arithmetic_flags(instruction.name, dest_after, state);
 			return 1;
 		} else {
 			//Memory mode
@@ -198,6 +232,11 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 			if(state->flags[FLAG_ZF]) execute_jump();
 		} else if (instruction.name == INST_NAME_JP) {
 			if(state->flags[FLAG_PF]) execute_jump();
+		} else if (instruction.name == INST_NAME_JB) {
+			if(state->flags[FLAG_CF]) execute_jump();
+		} else if (instruction.name == INST_NAME_LOOPNZ) {
+			state->registers[REG_CX]--;
+			if(state->registers[REG_CX] != 0 && !state->flags[FLAG_ZF]) execute_jump();
 		} else {
 			printf("INST_CONDITIONAL_JUMP not implemented for %s\n", get_inst_name(instruction));
 			return 0;
