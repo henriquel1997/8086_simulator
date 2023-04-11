@@ -7,6 +7,9 @@
 #include "print.c"
 #include "decode.c"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 struct String read_file(char* file_name){
 	struct String string;
 	FILE * file = fopen(file_name, "rb");
@@ -88,11 +91,18 @@ int main(int argc, char **argv){
 	struct State state = { 0 };
 	state.memory = calloc(MEMORY_SIZE, sizeof(byte));
 
+	int should_dump = 0;
+
 	for (int i = 1; i < argc - 1; i++){
 		if (strcmp(argv[i], "--exec") == 0){
 			state.should_execute = 1;
 		}else if (strcmp(argv[i], "--step_by_step") == 0){
 			state.step_by_step = 1;
+		}else if (strcmp(argv[i], "--dump") == 0){
+			should_dump = 1;
+		} else {
+			printf("Unknown command: %s\n", argv[i]);
+			return 0;
 		}
 	}
 
@@ -109,6 +119,26 @@ int main(int argc, char **argv){
 #endif
 
 	decode_and_execute(&state);
+
+	if (should_dump){
+		int name_len = strlen(file_name);
+		int name_start = 0;
+		int name_end = name_len;
+		for (int i = 0; i < name_len; i++){
+			if (file_name[i] == '/' || file_name[i] == '\\') {
+				name_start = i + 1;
+			} else if (file_name[i] == '.'){
+				name_end = i;
+				break;
+			}
+		}
+
+
+		char buffer[100];
+		strcpy(buffer, &file_name[name_start]);
+		strcpy(&buffer[name_end - name_start], "_output_image.bmp");
+		stbi_write_bmp(buffer, 64, 65, 4, state.memory);
+	}
 	
 	return 0;
 }

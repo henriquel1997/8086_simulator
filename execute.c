@@ -107,7 +107,7 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 #define set_overflow_flag_sub(operand1, operand2, result) state->flags[FLAG_OF] = ((((operand1) >> 15) != ((operand2) >> 15)) && (((operand2) >> 15) == ((result) >> 15)))
 
 	if (instruction.type == INST_R_M_TO_R_M) {
-		if (instruction.mode == 0b00) {
+		if (instruction.mode != 0b11) {
 			if (instruction.name == INST_NAME_MOV) {
 				if (instruction.direction) {
 					if (!execute_load(instruction, state)) return 0;
@@ -123,19 +123,16 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 					if (!execute_load(instruction, state)) return 0;
 					state->registers[register_index] += value;
 				} else {
-					printf("INST_R_M_TO_R_M Mode 0b00 not implemented for ADD\n");
+					printf("INST_R_M_TO_R_M Mode %d not implemented for ADD\n", instruction.mode);
 					return 0;
 					//if (!execute_store(instruction, state, value)) return 0;
 				}
 			} else {
-				printf("INST_R_M_TO_R_M Mode 0b00 not implemented\n");
+				printf("INST_R_M_TO_R_M Mode %d not implemented for %s\n", instruction.mode, get_inst_name(instruction));
 				return 0;
 			}
 			return 1;
-		} else if (instruction.mode == 0b01 || instruction.mode == 0b10) {
-			//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
-			printf("INST_R_M_TO_R_M Mode 01b or 10b not implemented\n");
-		} else if (instruction.mode == 0b11) {
+		} else {
 			int to_index;
 			int from_index;
 			if (instruction.direction){
@@ -311,6 +308,9 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 		} else if (instruction.name == INST_NAME_LOOPNZ) {
 			state->registers[REG_CX]--;
 			if(state->registers[REG_CX] != 0 && !state->flags[FLAG_ZF]) execute_jump();
+		} else if (instruction.name == INST_NAME_LOOP) {
+			state->registers[REG_CX]--;
+			if(state->registers[REG_CX] != 0) execute_jump();
 		} else {
 			printf("INST_CONDITIONAL_JUMP not implemented for %s\n", get_inst_name(instruction));
 			return 0;
