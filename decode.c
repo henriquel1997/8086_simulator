@@ -104,7 +104,7 @@ int decode_imd_to_r_m(struct Instruction* instruction, struct State* state){
 			byte disp_low = read_byte(state);
 			print_byte(disp_low);
 
-			if (instruction->wide){
+			if (instruction->mode == 0b10 || (instruction->mode == 0b00 && instruction->r_m == 0b110)){
 				byte* disp_pointer = (byte*) &instruction->disp;
 
 				disp_pointer[0] = disp_low;

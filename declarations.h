@@ -169,11 +169,15 @@ enum Flags {
 	NUM_FLAGS
 };
 
+#define MEMORY_SIZE (1024 * 1024)
+
 struct State {
 	unsigned short registers[NUM_REGS];
 	byte flags[NUM_FLAGS];
+	byte* memory;
 	struct String code;
 	int should_execute;
+	int step_by_step;
 };
 
 byte peek_byte(struct State* state, byte offset){
@@ -189,7 +193,10 @@ byte code_ended(struct State* state){
 }
 
 byte is_inst_wide(struct Instruction instruction){
-	return instruction.name == INST_NAME_MOV ? instruction.wide : (instruction.wide && !instruction.sign);
+	if (instruction.name == INST_NAME_MOV){
+		return instruction.wide;
+	}
+	return instruction.wide && !instruction.sign;
 }
 
 const char* get_inst_name(struct Instruction instruction) {

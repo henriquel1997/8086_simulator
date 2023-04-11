@@ -60,6 +60,11 @@ int decode_and_execute(struct State* state){
 			printf("\nFlags:\n");
 			print_flags(state, &prev_state);
 			printf("\n");
+
+			if (state->step_by_step){
+				printf("Press Enter to continue\n");
+				getchar();
+			}
 		}
 	}
 
@@ -81,14 +86,17 @@ int main(int argc, char **argv){
 	}
 
 	struct State state = { 0 };
+	state.memory = calloc(MEMORY_SIZE, sizeof(byte));
 
-	char* file_name;
-	if (strcmp(argv[1], "--exec") == 0){
-		state.should_execute = 1;
-		file_name = argv[2];
-	} else {
-		file_name = argv[1];
+	for (int i = 1; i < argc - 1; i++){
+		if (strcmp(argv[i], "--exec") == 0){
+			state.should_execute = 1;
+		}else if (strcmp(argv[i], "--step_by_step") == 0){
+			state.step_by_step = 1;
+		}
 	}
+
+	char* file_name = argv[argc - 1];
 
 	state.code = read_file(file_name);
 	if(!state.code.data){

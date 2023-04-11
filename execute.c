@@ -44,6 +44,56 @@ void set_arithmetic_flags(enum InstructionName name, unsigned short reg_after, s
 	state->flags[FLAG_PF] = num_bits % 2 == 0;
 }
 
+unsigned short get_memory_index(struct Instruction instruction, struct State* state){
+	unsigned short memory_index = 0;
+
+	if(instruction.mode != 0b11){
+		switch (instruction.r_m) {
+			case 0b000: memory_index = state->registers[REG_BX] + state->registers[REG_SI]; break;
+			case 0b001: memory_index = state->registers[REG_BX] + state->registers[REG_DI]; break;
+			case 0b010: memory_index = state->registers[REG_BP] + state->registers[REG_SI]; break;
+			case 0b011: memory_index = state->registers[REG_BP] + state->registers[REG_DI]; break;
+			case 0b100: memory_index = state->registers[REG_SI]; break;
+			case 0b101: memory_index = state->registers[REG_DI]; break;
+			case 0b110: memory_index = state->registers[REG_BP]; break;
+			case 0b111: memory_index = state->registers[REG_BX]; break;
+		}
+	}
+
+	memory_index += instruction.disp;
+	return memory_index;
+}
+
+int execute_store(struct Instruction instruction, struct State* state, unsigned short value){
+	unsigned short memory_index = get_memory_index(instruction, state);
+
+	if (instruction.wide){
+		unsigned char* data_pointer = (unsigned char*) &value;
+		state->memory[memory_index + 0] = data_pointer[0];
+		state->memory[memory_index + 1] = data_pointer[1];
+	} else {
+		state->memory[memory_index] = value;
+	}
+
+	return 1;
+}
+
+int execute_load(struct Instruction instruction, struct State* state){
+	unsigned short memory_index = get_memory_index(instruction, state);
+	int register_index = get_register_index(instruction.reg);
+
+	if (instruction.wide){
+		unsigned char* reg_pointer = (unsigned char*) &state->registers[register_index];
+		reg_pointer[0] = state->memory[memory_index + 0];
+		reg_pointer[1] = state->memory[memory_index + 1];
+	} else {
+		printf("Not wide load not implemented\n");
+		return 0;
+	}
+
+	return 1;
+}
+
 int execute_instruction(struct Instruction instruction, struct State* state){
 #define set_carry_flag_add(operand1, operand2) state->flags[FLAG_CF] = (((((unsigned int) (operand1)) + ((unsigned int) operand2)) >> 16) > 0)
 #define set_carry_flag_add_byte(operand1, operand2) state->flags[FLAG_CF] = (((((unsigned short) (operand1)) + ((unsigned short) operand2)) >> 8) > 0)
@@ -58,13 +108,30 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 
 	if (instruction.type == INST_R_M_TO_R_M) {
 		if (instruction.mode == 0b00) {
-			//Memory mode with no displacement*
-			if (instruction.r_m != 0b110) {
-				printf("INST_R_M_TO_R_M Mode 00b with R_M != 110b not implemented\n");
+			if (instruction.name == INST_NAME_MOV) {
+				if (instruction.direction) {
+					if (!execute_load(instruction, state)) return 0;
+				} else {
+					unsigned short value = state->registers[get_register_index(instruction.reg)];
+					if (!execute_store(instruction, state, value)) return 0;
+				}
+			} else if (instruction.name == INST_NAME_ADD) {
+				int register_index = get_register_index(instruction.reg);
+				unsigned short value = state->registers[register_index];
+
+				if (instruction.direction){
+					if (!execute_load(instruction, state)) return 0;
+					state->registers[register_index] += value;
+				} else {
+					printf("INST_R_M_TO_R_M Mode 0b00 not implemented for ADD\n");
+					return 0;
+					//if (!execute_store(instruction, state, value)) return 0;
+				}
 			} else {
-				//There actually is a 16-bit displacement if r_m is 0b110
-				printf("INST_R_M_TO_R_M Mode 00b with R_M == 110b not implemented\n");
+				printf("INST_R_M_TO_R_M Mode 0b00 not implemented\n");
+				return 0;
 			}
+			return 1;
 		} else if (instruction.mode == 0b01 || instruction.mode == 0b10) {
 			//Memory mode with 8-bit(0b01) or 16-bit(0b10) displacement
 			printf("INST_R_M_TO_R_M Mode 01b or 10b not implemented\n");
@@ -198,7 +265,14 @@ int execute_instruction(struct Instruction instruction, struct State* state){
 			return 1;
 		} else {
 			//Memory mode
-			printf("INST_IMD_TO_R_M Mode everything but 11b not implemented for %s\n", get_inst_name(instruction));
+			if (instruction.name == INST_NAME_MOV){
+				if (!execute_store(instruction, state, instruction.data)) return 0;
+			} else {
+				printf("INST_IMD_TO_R_M Mode everything but 11b not implemented for %s\n", get_inst_name(instruction));
+				return 0;
+			}
+
+			return 1;
 		}
 	} else if (instruction.type == INST_IMD_TO_REG) {
 		int reg_index = get_register_index(instruction.reg);
